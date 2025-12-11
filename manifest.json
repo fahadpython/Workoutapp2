@@ -1,0 +1,21 @@
+{
+  "short_name": "IronGuide",
+  "name": "IronGuide Pro Hypertrophy",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2548/2548530.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2548/2548530.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "orientation": "portrait"
+}
