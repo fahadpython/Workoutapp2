@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
-import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench } from 'lucide-react';
+import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle } from 'lucide-react';
 import StickFigure from './StickFigure';
 
 interface Props {
@@ -221,6 +221,7 @@ const ExerciseCard: React.FC<Props> = ({
   const [recommendation, setRecommendation] = useState<CoachRecommendation | null>(null);
   const [coachFeedback, setCoachFeedback] = useState<string | null>(null);
   const [showMonsterPrompt, setShowMonsterPrompt] = useState(false);
+  const [plateauAlert, setPlateauAlert] = useState<string | null>(null);
 
   // --- PACER ENGINE STATE ---
   const [isPacing, setIsPacing] = useState(false);
@@ -243,14 +244,12 @@ const ExerciseCard: React.FC<Props> = ({
     if (!isCardio && !exercise.isWarmup) {
         const rec = getProgressionRecommendation(exercise);
         setRecommendation(rec);
-        if (rec.type !== 'BASELINE' && completedSets.length === 0) {
-            setMetric1(rec.targetWeight.toString());
-        } else if (hist && hist.lastSession && completedSets.length === 0) {
-            setMetric1(hist.lastSession.topSet.weight.toString());
-        }
-    } else if (hist && hist.lastSession && completedSets.length === 0) {
-         setMetric1(hist.lastSession.topSet.weight.toString());
-         if (isCardio) setMetric2(hist.lastSession.topSet.reps.toString());
+    }
+    
+    // Check for Plateau
+    const pCheck = checkPlateau(exercise.id);
+    if (pCheck.isStalled) {
+        setPlateauAlert(pCheck.recommendation);
     }
 
     if ('speechSynthesis' in window) {
@@ -361,8 +360,21 @@ const ExerciseCard: React.FC<Props> = ({
       setCurrentPhaseIndex(phaseIdx);
       setPhaseTimeLeft(currentPhase.duration);
 
-      // Vibrate on phase change (Haptic cue)
-      vibrate(100);
+      // --- PHASE START HAPTICS ---
+      const action = currentPhase.action.toUpperCase();
+      
+      // 1. Concentric / Explosive (GO) - Sharp, Strong
+      if (['PRESS', 'DRIVE', 'PULL', 'UP', 'EXPLODE', 'CURL', 'CONTRACT', 'CLOSE'].some(k => action.includes(k))) {
+          vibrate(150); 
+      } 
+      // 2. Isometric / Hold (STOP/SQUEEZE) - Double Pulse
+      else if (['HOLD', 'SQUEEZE', 'PAUSE', 'STRETCH'].some(k => action.includes(k))) {
+          vibrate([70, 50, 70]);
+      } 
+      // 3. Eccentric / Lower (SLOW) - Small tick to start
+      else {
+          vibrate(30);
+      }
 
       if (currentPhase.voiceCue) {
           if (phaseIdx === 0 && pacerRepCount > 0) {
@@ -375,7 +387,19 @@ const ExerciseCard: React.FC<Props> = ({
       let timeLeft = currentPhase.duration * 10;
       pacerTimerRef.current = setInterval(() => {
           timeLeft--;
-          if (timeLeft % 10 === 0) setPhaseTimeLeft(timeLeft / 10);
+          if (timeLeft % 10 === 0) {
+              setPhaseTimeLeft(timeLeft / 10);
+              
+              // --- RHYTHMIC METRONOME HAPTICS ---
+              // For slow phases (Eccentric/Lowering), provide a faint heartbeat tick every second
+              // This helps the user gauge speed blindly without needing audio.
+              if (['LOWER', 'DOWN', 'STRETCH', 'RELEASE', 'OPEN'].some(k => currentPhase.action.toUpperCase().includes(k))) {
+                  // Only tick if not at the very end (the next phase will vibe)
+                  if (timeLeft > 0) {
+                      vibrate(20); // Very weak/short tick
+                  }
+              }
+          }
 
           if (timeLeft <= 0) {
               const nextPhaseIdx = phaseIdx + 1;
@@ -454,6 +478,32 @@ const ExerciseCard: React.FC<Props> = ({
       }
   };
 
+  // --- GAMIFICATION LOGIC ---
+  const getLastSessionValues = () => {
+      if (history && history.lastSession) {
+          return history.lastSession.topSet;
+      }
+      return null;
+  }
+  const lastSession = getLastSessionValues();
+
+  const getGamificationStatus = () => {
+      if (!lastSession || !metric1 || !metric2) return 'neutral';
+      const currentWeight = parseFloat(metric1);
+      const currentReps = parseFloat(metric2);
+      
+      if (currentWeight > lastSession.weight) return 'improved';
+      if (currentWeight === lastSession.weight && currentReps > lastSession.reps) return 'improved';
+      if (currentWeight === lastSession.weight && currentReps === lastSession.reps) return 'neutral';
+      
+      return 'regression';
+  }
+
+  const status = getGamificationStatus();
+  const inputBorderClass = status === 'improved' ? 'border-green-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 
+                           status === 'regression' ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 
+                           'border-gym-600';
+
   const activePhase: PacerPhase = exercise.pacer.phases[currentPhaseIndex] || { 
       action: 'GO', 
       breathing: 'Hold',
@@ -489,8 +539,19 @@ const ExerciseCard: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* --- PLATEAU ALERT --- */}
+      {plateauAlert && (
+          <div className="mb-4 bg-red-900/30 border border-red-500/50 p-3 rounded-lg flex items-start gap-3 animate-in slide-in-from-top-2">
+             <AlertTriangle className="text-red-400 flex-shrink-0 mt-1" size={18} />
+             <div>
+                 <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">Plateau Detected</p>
+                 <p className="text-sm text-gray-300">{plateauAlert}</p>
+             </div>
+          </div>
+      )}
+
       {/* --- SMART COACH BANNER --- */}
-      {recommendation && recommendation.type !== 'BASELINE' && completedSets.length < exercise.sets && (
+      {recommendation && recommendation.type !== 'BASELINE' && completedSets.length < exercise.sets && !plateauAlert && (
         <div className={`mb-4 p-3 rounded-lg border flex items-start gap-3 animate-in fade-in slide-in-from-top-1
             ${recommendation.type === 'INCREASE' ? 'bg-gradient-to-r from-blue-900/50 to-blue-800/30 border-blue-500/30' : 'bg-gym-800 border-gym-700'}
         `}>
@@ -569,7 +630,7 @@ const ExerciseCard: React.FC<Props> = ({
 
                 {!isCardio ? (
                     <>
-                        <div className={`w-64 h-64 rounded-full border-8 flex flex-col items-center justify-center relative mb-8 transition-all duration-300
+                        <div className={`w-64 h-64 rounded-full border-8 flex flex-col items-center justify-center relative mb-8 transition-all duration-300 ease-linear
                             ${activePhase.breathing === 'Exhale' ? 'border-gym-success bg-gym-success/10 scale-110' : 
                             activePhase.breathing === 'Inhale' ? 'border-blue-500 bg-blue-500/10 scale-90' : 
                             'border-yellow-500 bg-yellow-500/10 scale-100'
@@ -621,7 +682,12 @@ const ExerciseCard: React.FC<Props> = ({
         <div className="mb-4 p-4 bg-gym-800/30 rounded-lg text-sm text-gray-300 border border-gym-700/50 animate-in fade-in slide-in-from-top-2">
            
            {/* Stick Figure Animation */}
-           <StickFigure motionType={exercise.motionType} exerciseName={exercise.name} />
+           <StickFigure 
+             motionType={exercise.motionType} 
+             exerciseName={exercise.name} 
+             muscleSplit={exercise.muscleSplit}
+             pacer={exercise.pacer}
+           />
 
            {/* Visualizer & Muscle Breakdown */}
            <FormVisualizer type={exercise.motionType} />
@@ -680,8 +746,8 @@ const ExerciseCard: React.FC<Props> = ({
                                 step={isCardio ? "0.1" : "1"}
                                 value={metric1}
                                 onChange={e => setMetric1(e.target.value)}
-                                placeholder={recommendation?.targetWeight ? `${recommendation.targetWeight}` : '-'}
-                                className="w-full bg-gym-900 border border-gym-600 rounded-xl p-4 text-2xl text-white text-center font-bold focus:border-gym-accent focus:outline-none"
+                                placeholder={lastSession ? `${lastSession.weight}` : recommendation?.targetWeight ? `${recommendation.targetWeight}` : '-'}
+                                className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
                             />
                         </div>
                     )}
@@ -693,11 +759,18 @@ const ExerciseCard: React.FC<Props> = ({
                             type="number" 
                             value={metric2}
                             onChange={e => setMetric2(e.target.value)}
-                            placeholder={isCardio ? '10' : (pacerRepCount > 0 ? pacerRepCount.toString() : "-")}
-                            className="w-full bg-gym-900 border border-gym-600 rounded-xl p-4 text-2xl text-white text-center font-bold focus:border-gym-accent focus:outline-none"
+                            placeholder={lastSession ? `${lastSession.reps}` : isCardio ? '10' : (pacerRepCount > 0 ? pacerRepCount.toString() : "-")}
+                            className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
                         />
                     </div>
                   </div>
+                  
+                  {status === 'improved' && (
+                      <p className="text-[10px] text-green-400 font-bold text-center mb-2 uppercase animate-pulse">Record Broken!</p>
+                  )}
+                  {status === 'regression' && (
+                      <p className="text-[10px] text-red-400 font-bold text-center mb-2 uppercase">Below Last Session</p>
+                  )}
 
                   {/* Estimated Calories */}
                   <div className="mb-4 text-center z-10 relative">

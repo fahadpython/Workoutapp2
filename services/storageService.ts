@@ -135,6 +135,56 @@ export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null =
   };
 };
 
+export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommendation: string | null } => {
+  const historyRaw = localStorage.getItem(KEYS.HISTORY);
+  if (!historyRaw) return { isStalled: false, recommendation: null };
+  
+  const fullHistory = JSON.parse(historyRaw);
+  const logs = fullHistory[exerciseId] as HistoryLog[] || [];
+
+  if (logs.length < 2) return { isStalled: false, recommendation: null };
+
+  // Sort logs by date desc
+  const sortedLogs = logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  // Get unique dates
+  const uniqueDates = Array.from(new Set(sortedLogs.map(l => l.date)));
+  
+  // Filter out "today" to identify historical stalls
+  const today = getTodayString();
+  const historicalDates = uniqueDates.filter(d => d !== today);
+
+  if (historicalDates.length < 2) return { isStalled: false, recommendation: null };
+
+  const session1Date = historicalDates[0];
+  const session2Date = historicalDates[1];
+
+  const getTopSet = (date: string) => {
+    const sessionLogs = sortedLogs.filter(l => l.date === date);
+    // Sort by weight desc, then reps desc
+    sessionLogs.sort((a, b) => b.weight - a.weight || b.reps - a.reps);
+    return sessionLogs[0];
+  };
+
+  const topSet1 = getTopSet(session1Date);
+  const topSet2 = getTopSet(session2Date);
+
+  if (!topSet1 || !topSet2) return { isStalled: false, recommendation: null };
+
+  // Stalled definition: Same weight AND Same reps (or less) for top set
+  if (topSet1.weight === topSet2.weight && topSet1.reps <= topSet2.reps) {
+     // Suggest Deload
+     const deloadWeight = Math.floor((topSet1.weight * 0.9) / 1.25) * 1.25; 
+     const targetReps = Math.floor(topSet1.reps * 1.2); 
+     return {
+         isStalled: true,
+         recommendation: `You are stalled at ${topSet1.weight}kg. Strategy: Drop weight to ${deloadWeight}kg and aim for ${targetReps} reps to reset.`
+     };
+  }
+
+  return { isStalled: false, recommendation: null };
+};
+
 export const clearAllData = () => {
   localStorage.removeItem(KEYS.SESSION);
   localStorage.removeItem(KEYS.STATS);

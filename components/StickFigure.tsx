@@ -1,286 +1,433 @@
 
-import React, { useEffect, useState } from 'react';
-import { MotionType } from '../types';
+import React, { useEffect, useState, useMemo } from 'react';
+import { MotionType, PacerConfig } from '../types';
 
 interface StickFigureProps {
   motionType: MotionType;
   exerciseName: string;
+  muscleSplit?: Record<string, number>;
+  pacer?: PacerConfig;
 }
 
-const StickFigure: React.FC<StickFigureProps> = ({ motionType, exerciseName }) => {
-  const [t, setT] = useState(0);
+// --- TYPE DEFINITIONS ---
+type Point = { x: number; y: number };
+type Skeleton = {
+  head: Point;
+  neck: Point;
+  shoulderL: Point;
+  shoulderR: Point;
+  elbowL: Point;
+  elbowR: Point;
+  wristL: Point;
+  wristR: Point;
+  spineTop: Point;
+  spineBottom: Point;
+  hipL: Point;
+  hipR: Point;
+  kneeL: Point;
+  kneeR: Point;
+  ankleL: Point;
+  ankleR: Point;
+};
 
+// --- MUSCLE MAPPING ---
+// Maps muscle names from data to skeletal segments
+const MUSCLE_MAP: Record<string, string[]> = {
+  'Chest': ['torso'], 'Upper Chest': ['torso'], 'Lower Chest': ['torso'], 'Mid Chest': ['torso'],
+  'Inner Chest': ['torso'],
+  'Back': ['torso', 'shoulders'], 'Lats': ['torso', 'shoulders'], 'Upper Lats': ['torso'],
+  'Mid Back': ['torso'], 'Upper Back': ['shoulders'], 'Traps': ['shoulders', 'neck'],
+  'Shoulders': ['shoulders'], 'Front Delts': ['shoulders'], 'Side Delts': ['shoulders'], 'Rear Delts': ['shoulders'],
+  'Triceps': ['upperArms'], 'Biceps': ['upperArms'], 'Brachialis': ['upperArms'],
+  'Bicep Long Head': ['upperArms'], 'Bicep Short Head': ['upperArms'],
+  'Forearms': ['forearms'],
+  'Legs': ['thighs', 'shins', 'hips'], 'Quads': ['thighs'], 'Hamstrings': ['thighs'],
+  'Glutes': ['hips'], 'Calves': ['shins'], 'Soleus': ['shins'],
+  'Abs': ['spine'], 'Core': ['spine'], 'Lower Back': ['spine']
+};
+
+const StickFigure: React.FC<StickFigureProps> = ({ motionType, exerciseName, muscleSplit, pacer }) => {
+  const [animProgress, setAnimProgress] = useState(0);
+
+  // --- TEMPO CALCULATOR ---
   useEffect(() => {
-    let frameId: number;
+    if (!pacer || pacer.phases.length === 0) {
+        // Fallback loop if no pacer (2s loop)
+        let start = Date.now();
+        const loop = () => {
+            const now = Date.now();
+            const t = ((now - start) % 2000) / 2000; 
+            // Sine wave 0->1->0
+            const val = (Math.sin(t * Math.PI * 2 - (Math.PI/2)) + 1) / 2;
+            setAnimProgress(val);
+            requestAnimationFrame(loop);
+        };
+        const frame = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(frame);
+    }
+
+    const totalDuration = pacer.phases.reduce((acc, p) => acc + p.duration, 0) * 1000;
+    
     const animate = () => {
-      // 2.5 second cycle (0 to 1 to 0)
-      const now = Date.now();
-      const cyclePos = (now % 2500) / 2500; 
-      // Sine wave for smooth back-and-forth
-      const val = (Math.sin(cyclePos * Math.PI * 2 - (Math.PI/2)) + 1) / 2;
-      setT(val);
-      frameId = requestAnimationFrame(animate);
-    };
-    frameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameId);
-  }, []);
-
-  const name = exerciseName.toLowerCase();
-  
-  const renderFigure = () => {
-    // --- 1. BENCH PRESS (Lying) ---
-    if (name.includes('bench') || (name.includes('press') && (name.includes('flat') || name.includes('incline')))) {
-        const incline = name.includes('incline') ? 15 : 0;
-        const armExt = 25 * t;
+        const now = Date.now();
+        // Global time sync based on period
+        const timeInCycle = now % totalDuration;
         
-        return (
-            <g stroke="white" strokeWidth="2" fill="none" transform="translate(10,10) scale(0.8)">
-                {/* Bench */}
-                <line x1="10" y1="70" x2="80" y2={70 - incline} stroke="#475569" strokeWidth="4" />
-                <line x1="20" y1="70" x2="20" y2="90" stroke="#475569" />
-                <line x1="70" y1={70 - incline} x2="70" y2="90" stroke="#475569" />
+        let elapsed = 0;
+        let currentProgress = 0;
+
+        for (const phase of pacer.phases) {
+            const phaseDur = phase.duration * 1000;
+            if (timeInCycle < elapsed + phaseDur) {
+                // We are in this phase
+                const localT = (timeInCycle - elapsed) / phaseDur; // 0 to 1 within phase
                 
-                {/* Body (Head at 20, Hips at 60) */}
-                <circle cx="20" cy={65 - (incline * 0.1)} r="5" /> 
-                <line x1="20" y1={65 + 5 - (incline * 0.1)} x2="55" y2={65 - (incline * 0.8)} /> {/* Torso */}
-                <line x1="55" y1={65 - (incline * 0.8)} x2="65" y2={55} /> {/* Thigh */}
-                <line x1="65" y1={55} x2="65" y2={75} /> {/* Shin */}
+                // Determine movement based on action
+                const action = phase.action.toUpperCase();
                 
-                {/* Arms (Shoulder approx at 30) */}
-                <path d={`M 30 ${65 - (incline * 0.3)} L 30 ${55 - armExt - (incline * 0.3)} L 45 ${55 - armExt - (incline * 0.3)}`} />
-                
-                {/* Weight */}
-                <line x1="20" y1={55 - armExt - (incline * 0.3)} x2="55" y2={55 - armExt - (incline * 0.3)} stroke="#ef4444" strokeWidth="3" />
-            </g>
-        );
-    }
-    
-    // --- 2. DIPS ---
-    if (name.includes('dip')) {
-        const dip = 20 * (1 - t); // Go down then up
-        return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(20,10) scale(0.8)">
-                {/* Bars */}
-                <line x1="10" y1="60" x2="40" y2="60" stroke="#475569" strokeWidth="3" />
-                <line x1="25" y1="60" x2="25" y2="90" stroke="#475569" strokeWidth="3" />
-                
-                {/* Body - moves up and down */}
-                <g transform={`translate(0, ${dip})`}>
-                    <circle cx="35" cy="30" r="5" />
-                    <line x1="35" y1="35" x2="40" y2="60" /> {/* Torso lean forward */}
-                    <line x1="40" y1="60" x2="40" y2="80" /> {/* Legs */}
+                // Standard: 0 = Extended/Start, 1 = Contracted/End
+                if (['LOWER', 'STRETCH', 'DOWN', 'OPEN'].some(k => action.includes(k))) {
+                    // Eccentric: Going towards 1 (if press) or 0 (if pull)? 
+                    // Let's standarize: 0 = "Start Position" (Top of Bench), 1 = "Bottom Position" (Chest)
+                    // Bench Press: Start(0) -> Lower -> End(1)
+                    // Pull Down: Start(0) -> Pull -> End(1) ?? No, Pull usually starts at 0.
                     
-                    {/* Arm - Forearm static on bar, Upper arm moves */}
-                    {/* Shoulder at 35,35. Hand at 25,60 */}
-                    <path d={`M 35 35 L 15 ${45 + (dip * 0.5)} L 25 60`} />
-                </g>
-             </g>
-        );
-    }
-
-    // --- 3. OVERHEAD PRESS (Standing) ---
-    if (name.includes('overhead') || name.includes('shoulder') || name.includes('military')) {
-        const press = 30 * t;
-        return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(20,10) scale(0.8)">
-                <circle cx="40" cy="30" r="5" />
-                <line x1="40" y1="35" x2="40" y2="65" />
-                <line x1="40" y1="65" x2="35" y2="90" />
-                <line x1="40" y1="65" x2="45" y2="90" />
-                
-                {/* Arms */}
-                <path d={`M 40 40 L 25 ${40 - (press * 0.5)} L 25 ${30 - press}`} />
-                <path d={`M 40 40 L 55 ${40 - (press * 0.5)} L 55 ${30 - press}`} />
-                
-                {/* DBs */}
-                <circle cx="25" cy={30 - press} r="3" fill="#ef4444" stroke="none" />
-                <circle cx="55" cy={30 - press} r="3" fill="#ef4444" stroke="none" />
-             </g>
-        );
-    }
-
-    // --- 4. RDL / HINGE ---
-    if (motionType === 'hinge' || name.includes('deadlift')) {
-        const hinge = 45 * (1 - t); // Angle degrees
-        const rad = (hinge * Math.PI) / 180;
+                    // Let's map specifically by motion type
+                    if (motionType === 'press' || motionType === 'squat' || motionType === 'hinge') {
+                         currentProgress = localT; // 0 -> 1
+                    } else {
+                         currentProgress = 1 - localT; // Return to start
+                    }
+                } else if (['PRESS', 'PULL', 'DRIVE', 'UP', 'CURL', 'RAISE', 'CONTRACT', 'CLOSE', 'EXPLODE'].some(k => action.includes(k))) {
+                    // Concentric
+                    if (motionType === 'press' || motionType === 'squat' || motionType === 'hinge') {
+                        currentProgress = 1 - localT; // 1 -> 0
+                    } else {
+                        currentProgress = localT; // 0 -> 1
+                    }
+                } else {
+                    // Hold/Squeeze
+                    // Are we holding at start or end?
+                    // Usually holds are at peak contraction
+                    if (motionType === 'press' || motionType === 'squat' || motionType === 'hinge') {
+                        // Hold at bottom usually? Or top lockout?
+                        // Context: "Pause at chest" -> Bottom (1). "Lockout" -> Top (0).
+                        // Heuristic: If previous phase was eccentric (Lower), we are likely at 1.
+                        // Ideally we check phase index, but stateless is harder.
+                        // Default to 1 (Contraction/Stretch point) for holds usually.
+                        currentProgress = 1; 
+                    } else {
+                        currentProgress = 1; // Hold at contraction
+                    }
+                }
+                break;
+            }
+            elapsed += phaseDur;
+        }
         
-        // Hip at 40, 60
-        // Head pos calculated based on angle
-        const torsoLen = 30;
-        const headX = 40 + Math.sin(rad) * torsoLen;
-        const headY = 60 - Math.cos(rad) * torsoLen;
-
-        // Shoulder is approx 80% up the torso
-        const shoulderX = 40 + Math.sin(rad) * (torsoLen * 0.8);
-        const shoulderY = 60 - Math.cos(rad) * (torsoLen * 0.8);
-
-        return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(10,10) scale(0.8)">
-                {/* Legs */}
-                <line x1="40" y1="60" x2="40" y2="90" />
-                
-                {/* Torso */}
-                <line x1="40" y1="60" x2={headX} y2={headY} />
-                <circle cx={headX} cy={headY} r="5" />
-                
-                {/* Arm hanging vertical from shoulder */}
-                <line x1={shoulderX} y1={shoulderY} x2={shoulderX} y2={shoulderY + 25} />
-                <circle cx={shoulderX} cy={shoulderY + 25} r="4" fill="#ef4444" stroke="none" />
-             </g>
-        );
-    }
+        setAnimProgress(currentProgress);
+        requestAnimationFrame(animate);
+    };
     
-    // --- 5. SQUAT / LEG PRESS ---
-    if (name.includes('squat') || name.includes('leg press')) {
-        const squat = 20 * (1 - t);
-        return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(20,10) scale(0.8)">
-                 {/* Body moves straight down */}
-                 <circle cx="40" cy={30 + squat} r="5" />
-                 <line x1="40" y1={35 + squat} x2="40" y2={60 + squat} />
-                 
-                 {/* Legs fold */}
-                 {/* Hip 40, 60+s. Knee moves out. Foot at 40,90 */}
-                 <path d={`M 40 ${60 + squat} L 25 ${75 + (squat * 0.5)} L 40 90`} />
-                 <path d={`M 40 ${60 + squat} L 55 ${75 + (squat * 0.5)} L 40 90`} />
-             </g>
-        );
-    }
+    const frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [pacer, motionType]);
 
-    // --- 6. CURLS ---
-    if (motionType === 'curl' || name.includes('curl')) {
-        const curl = t; // 0 to 1
-        const handX = 40 + (15 * curl);
-        const handY = 65 - (25 * curl);
-        
-        return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(20,10) scale(0.8)">
-                <circle cx="40" cy="30" r="5" />
-                <line x1="40" y1="35" x2="40" y2="65" />
-                <line x1="40" y1="65" x2="35" y2="90" />
-                <line x1="40" y1="65" x2="45" y2="90" />
-                
-                {/* Arm */}
-                <line x1="40" y1="40" x2="40" y2="60" /> {/* Upper */}
-                <line x1="40" y1="60" x2={handX} y2={handY} /> {/* Forearm */}
-                
-                <circle cx={handX} cy={handY} r="3" fill="#ef4444" stroke="none" />
-             </g>
-        );
-    }
-    
-    // --- 7. LAT PULLDOWN ---
-    if (name.includes('pulldown') || (name.includes('pull') && !name.includes('face') && !name.includes('apart'))) {
-         const pull = 25 * t; // Downward
+  // --- SKELETON GENERATOR ---
+  const getSkeleton = (t: number): Skeleton => {
+     // t: 0 to 1. 
+     // 0 = Neutral/Start (Standing, Arms Up). 
+     // 1 = Active/Deep (Squat bottom, Bar on chest).
+
+     const name = exerciseName.toLowerCase();
+     const isBench = name.includes('bench') || (name.includes('press') && name.includes('dumb'));
+     const isSeated = name.includes('seated') || name.includes('pulldown') || name.includes('row') || name.includes('machine') || name.includes('pec deck');
+     const isSquat = name.includes('squat') || name.includes('leg press');
+     const isHinge = motionType === 'hinge' || name.includes('deadlift') || name.includes('row'); // Bent over row is hinge-like
+     const isCurl = motionType === 'curl';
+     const isRaise = motionType === 'raise' || name.includes('fly');
+
+     // Base Coordinates (Center 50, 50)
+     // Standing Base
+     let skel: Skeleton = {
+         head: {x: 50, y: 15}, neck: {x: 50, y: 22},
+         shoulderL: {x: 42, y: 25}, shoulderR: {x: 58, y: 25},
+         elbowL: {x: 35, y: 40}, elbowR: {x: 65, y: 40},
+         wristL: {x: 30, y: 55}, wristR: {x: 70, y: 55},
+         spineTop: {x: 50, y: 22}, spineBottom: {x: 50, y: 50},
+         hipL: {x: 45, y: 50}, hipR: {x: 55, y: 50},
+         kneeL: {x: 45, y: 75}, kneeR: {x: 55, y: 75},
+         ankleL: {x: 45, y: 95}, ankleR: {x: 55, y: 95}
+     };
+
+     if (isBench) {
+         // Lying down logic (Side view ish or Top view representation)
+         // Let's do Side View for Bench
+         // Head Left (20), Feet Right (80)
+         const incline = name.includes('incline') ? 15 : 0;
+         const bodyY = 60;
+         const armExt = 25 * (1 - t); // 0=Up(Extended), 1=Down(Chest)
          
-         return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(10,10) scale(0.8)">
-                {/* Seat */}
-                <line x1="30" y1="75" x2="70" y2="75" stroke="#475569" />
-                
-                {/* Body */}
-                <circle cx="50" cy="50" r="5" />
-                <line x1="50" y1="55" x2="50" y2="75" />
-                <line x1="50" y1="75" x2="45" y2="90" />
-                <line x1="50" y1="75" x2="55" y2="90" />
-                
-                {/* Arms - Start high, pull elbows down */}
-                <path d={`M 50 55 L 30 ${40 + pull} L 30 ${20 + pull}`} />
-                <path d={`M 50 55 L 70 ${40 + pull} L 70 ${20 + pull}`} />
-                
-                {/* Bar */}
-                <line x1="15" y1={20 + pull} x2="85" y2={20 + pull} stroke="#ef4444" strokeWidth="3" />
-             </g>
-         );
-    }
-    
-    // --- 8. ROWS ---
-    if (name.includes('row')) {
-         const row = 15 * t;
-         
-         return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(10,10) scale(0.8)">
-                 {/* Seat */}
-                 <line x1="20" y1="75" x2="60" y2="75" stroke="#475569" />
-                 
-                 {/* Body */}
-                 <circle cx="40" cy="50" r="5" />
-                 <line x1="40" y1="55" x2="40" y2="75" />
-                 <line x1="40" y1="75" x2="60" y2="75" /> {/* Legs */}
-                 
-                 {/* Arms - Pull back */}
-                 <line x1="40" y1="55" x2={60 - row} y2={60} />
-                 <line x1={60 - row} y1={60} x2={80 - row} y2={60} />
-                 
-                 {/* Cable */}
-                 <line x1={80 - row} y1={60} x2="90" y2="60" stroke="#475569" strokeDasharray="4 2" />
-             </g>
-         );
-    }
-    
-    // --- 9. LATERAL RAISE / FLY ---
-    if (name.includes('raise') || name.includes('fly') || name.includes('pec deck')) {
-        const raise = 80 * t; // Angle
-        const rad = (raise * Math.PI) / 180;
-        
-        // Pivot 40, 40
-        const armLen = 25;
-        const handX = 40 + Math.sin(rad) * armLen;
-        const handY = 40 + Math.cos(rad) * armLen;
-        
-        return (
-             <g stroke="white" strokeWidth="2" fill="none" transform="translate(20,10) scale(0.8)">
-                {/* Arms */}
-                <circle cx="40" cy="30" r="5" />
-                <line x1="40" y1="35" x2="40" y2="65" />
-                <line x1="40" y1="65" x2="35" y2="90" />
-                <line x1="40" y1="65" x2="45" y2="90" />
-                
-                <line x1="40" y1="40" x2={40 + Math.sin(rad) * armLen} y2={40 + Math.cos(rad) * armLen} />
-                <line x1="40" y1="40" x2={40 - Math.sin(rad) * armLen} y2={40 + Math.cos(rad) * armLen} />
-                
-                <circle cx={40 + Math.sin(rad) * armLen} cy={40 + Math.cos(rad) * armLen} r="3" fill="#ef4444" stroke="none" />
-                <circle cx={40 - Math.sin(rad) * armLen} cy={40 + Math.cos(rad) * armLen} r="3" fill="#ef4444" stroke="none" />
-             </g>
-        );
-    }
-    
-    // --- 10. GLUTE BRIDGE ---
-    if (name.includes('bridge')) {
-        const bridge = 20 * t;
-        return (
-            <g stroke="white" strokeWidth="2" fill="none" transform="translate(10,20) scale(0.8)">
-                {/* Shoulders at 20,80. Feet at 80,80. Hips move from 80 to 60 */}
-                <circle cx="15" cy="80" r="5" />
-                <line x1="20" y1="80" x2="50" y2={80 - bridge} /> {/* Torso */}
-                <line x1="50" y1={80 - bridge} x2="80" y2="80" /> {/* Thighs */}
-                <line x1="80" y1="80" x2="80" y2="90" /> {/* Shins (verticalish) */}
-                
-                {/* Weight on hips */}
-                 <rect x="45" y={75 - bridge} width="10" height="5" fill="#ef4444" stroke="none" />
-            </g>
-        )
-    }
+         skel.head = {x: 20, y: bodyY - (incline/2)};
+         skel.neck = {x: 25, y: bodyY};
+         skel.spineTop = {x: 25, y: bodyY};
+         skel.spineBottom = {x: 50, y: bodyY};
+         skel.hipL = {x: 50, y: bodyY}; skel.hipR = {x: 50, y: bodyY};
+         skel.kneeL = {x: 65, y: bodyY - 10}; skel.kneeR = {x: 65, y: bodyY - 10}; // Knees up
+         skel.ankleL = {x: 80, y: bodyY + 15}; skel.ankleR = {x: 80, y: bodyY + 15}; // Feet down
 
-    // Default: Simple standing idle
-    return (
-         <g stroke="white" strokeWidth="2" fill="none" transform="translate(20,10) scale(0.8)">
-            <circle cx="40" cy="30" r="5" />
-            <line x1="40" y1="35" x2="40" y2="65" />
-            <line x1="40" y1="65" x2="35" y2="90" />
-            <line x1="40" y1="65" x2="45" y2="90" />
-            <line x1="40" y1="40" x2="30" y2={50 + (5 * t)} />
-            <line x1="40" y1="40" x2="50" y2={50 + (5 * t)} />
-         </g>
-    );
+         // Arms
+         const shoulderX = 30; const shoulderY = bodyY;
+         skel.shoulderL = {x: shoulderX, y: shoulderY}; skel.shoulderR = {x: shoulderX, y: shoulderY};
+         // Elbows flare out? In 2D side view, elbows go DOWN.
+         skel.elbowL = {x: shoulderX + 5, y: shoulderY - 15 + (t * 15)}; 
+         skel.elbowR = skel.elbowL;
+         // Wrists push up/down
+         skel.wristL = {x: shoulderX, y: shoulderY - 30 + (t * 25)};
+         skel.wristR = skel.wristL;
+     } 
+     else if (isSquat) {
+         // Squat: t=0 (Stand), t=1 (Deep)
+         const drop = t * 20;
+         const lean = t * 10;
+         
+         skel.head = {x: 50 + lean, y: 15 + drop};
+         skel.neck = {x: 50 + lean, y: 22 + drop};
+         skel.shoulderL = {x: 42 + lean, y: 25 + drop}; skel.shoulderR = {x: 58 + lean, y: 25 + drop};
+         skel.spineTop = {x: 50 + lean, y: 22 + drop};
+         skel.spineBottom = {x: 50 - (t*5), y: 50 + drop}; // Hips go back
+         skel.hipL = {x: 45 - (t*5), y: 50 + drop}; skel.hipR = {x: 55 - (t*5), y: 50 + drop};
+         
+         // Knees move forward
+         skel.kneeL = {x: 45 + (t*10), y: 75 + (drop/2)}; skel.kneeR = {x: 55 + (t*10), y: 75 + (drop/2)};
+         skel.ankleL = {x: 45, y: 95}; skel.ankleR = {x: 55, y: 95};
+
+         // Arms (Holding bar on back?)
+         skel.elbowL = {x: 35 + lean, y: 35 + drop}; skel.elbowR = {x: 65 + lean, y: 35 + drop};
+         skel.wristL = {x: 40 + lean, y: 25 + drop}; skel.wristR = {x: 60 + lean, y: 25 + drop};
+     }
+     else if (isHinge) {
+         // RDL: t=0 (Stand), t=1 (Bent)
+         const bend = t * 80; // degrees
+         const rad = (bend * Math.PI) / 180;
+         
+         // Pivot at hips (50, 50)
+         const torsoLen = 28;
+         const headX = 50 + Math.sin(rad) * torsoLen;
+         const headY = 50 - Math.cos(rad) * torsoLen;
+         
+         skel.spineBottom = {x: 50, y: 50};
+         skel.spineTop = {x: headX, y: headY + 7}; // Neck base
+         skel.head = {x: headX, y: headY};
+         skel.neck = skel.spineTop;
+         
+         // Shoulders
+         skel.shoulderL = {x: headX - 8, y: headY + 5};
+         skel.shoulderR = {x: headX + 8, y: headY + 5};
+         
+         skel.hipL = {x: 45, y: 50}; skel.hipR = {x: 55, y: 50};
+         skel.kneeL = {x: 45, y: 75}; skel.kneeR = {x: 55, y: 75}; // Soft knees usually fixed
+         skel.ankleL = {x: 45, y: 95}; skel.ankleR = {x: 55, y: 95};
+         
+         // Arms hanging
+         skel.elbowL = {x: skel.shoulderL.x, y: skel.shoulderL.y + 15};
+         skel.elbowR = {x: skel.shoulderR.x, y: skel.shoulderR.y + 15};
+         skel.wristL = {x: skel.shoulderL.x, y: skel.shoulderL.y + 28};
+         skel.wristR = {x: skel.shoulderR.x, y: skel.shoulderR.y + 28};
+     }
+     else if (isSeated) {
+         // Seated Press/Pull/Curl
+         // Hips at 50, 60. Knees 50, 75 (bent). Ankles 50, 95.
+         skel.hipL = {x: 45, y: 60}; skel.hipR = {x: 55, y: 60};
+         skel.spineBottom = {x: 50, y: 60};
+         skel.kneeL = {x: 45, y: 75}; skel.kneeR = {x: 55, y: 75};
+         skel.ankleL = {x: 45, y: 95}; skel.ankleR = {x: 55, y: 95}; // Legs usually forward or down
+
+         // Torso Upright
+         skel.spineTop = {x: 50, y: 30};
+         skel.neck = {x: 50, y: 30};
+         skel.head = {x: 50, y: 23};
+         skel.shoulderL = {x: 42, y: 33}; skel.shoulderR = {x: 58, y: 33};
+
+         if (name.includes('row')) {
+             // Row: t=0 (Extended), t=1 (Pulled Back)
+             const pull = t * 15;
+             // Elbows back
+             skel.elbowL = {x: 35 + ((1-t)*15), y: 45}; 
+             skel.elbowR = {x: 65 + ((1-t)*15), y: 45};
+             skel.wristL = {x: 42 + ((1-t)*25), y: 45};
+             skel.wristR = {x: 58 + ((1-t)*25), y: 45};
+         } else if (isCurl) {
+             // Seated Curl
+             skel.elbowL = {x: 42, y: 50}; skel.elbowR = {x: 58, y: 50}; // Fixed on pad?
+             // Seated machine usually has elbows forward on pad
+             skel.elbowL = {x: 42, y: 40}; skel.elbowR = {x: 58, y: 40};
+             // t=0 (Down/Straight), t=1 (Up/Curled)
+             const curl = t; 
+             skel.wristL = {x: 42, y: 60 - (curl*25)}; // 60 -> 35
+             skel.wristR = {x: 58, y: 60 - (curl*25)};
+         } else if (motionType === 'fly' || name.includes('pec deck')) {
+             // Pec Deck: Seated Fly
+             // 0 = Open, 1 = Closed
+             skel.elbowL = {x: 20 + (t*22), y: 35};
+             skel.elbowR = {x: 80 - (t*22), y: 35};
+             skel.wristL = {x: 15 + (t*35), y: 25}; // Hands usually higher/up
+             skel.wristR = {x: 85 - (t*35), y: 25};
+         } else {
+             // Pulldown (Default Seated)
+             const down = t; 
+             skel.wristL = {x: 30, y: 10 + (down * 25)};
+             skel.wristR = {x: 70, y: 10 + (down * 25)};
+             skel.elbowL = {x: 35 - (down*5), y: 25 + (down * 20)};
+             skel.elbowR = {x: 65 + (down*5), y: 25 + (down * 20)};
+         }
+     }
+     else if (isCurl) {
+         // Standing Curl
+         skel.elbowL = {x: 42, y: 50}; skel.elbowR = {x: 58, y: 50};
+         skel.wristL = {x: 42, y: 75 - (t*35)}; skel.wristR = {x: 58, y: 75 - (t*35)};
+         // Bring wrists closer to shoulders
+         if (t > 0.5) {
+             skel.wristL.x += 5 * (t-0.5); // Curl in
+             skel.wristR.x -= 5 * (t-0.5);
+         }
+     }
+     else if (isRaise || motionType === 'fly') {
+         // Lateral Raise: t=0 (Down), t=1 (Up side)
+         // Fly: t=0 (Open), t=1 (Closed front)
+         if (motionType === 'fly') {
+             // 0 = Open Wide, 1 = Hands Touch
+             skel.wristL = {x: 10 + (t*40), y: 40};
+             skel.wristR = {x: 90 - (t*40), y: 40};
+             skel.elbowL = {x: 20 + (t*22), y: 40};
+             skel.elbowR = {x: 80 - (t*22), y: 40};
+         } else {
+             // Raise
+             skel.elbowL = {x: 35 - (t*15), y: 40 - (t*10)};
+             skel.elbowR = {x: 65 + (t*15), y: 40 - (t*10)};
+             skel.wristL = {x: 30 - (t*25), y: 55 - (t*30)};
+             skel.wristR = {x: 70 + (t*25), y: 55 - (t*30)};
+         }
+     }
+     else {
+         // Generic Press
+         const press = t * 30;
+         skel.wristL = {x: 42, y: 35 - press}; skel.wristR = {x: 58, y: 35 - press};
+         skel.elbowL = {x: 35, y: 45 - (press/2)}; skel.elbowR = {x: 65, y: 45 - (press/2)};
+     }
+
+     return skel;
   };
 
+  const skel = getSkeleton(animProgress);
+
+  // --- RENDERING HELPERS ---
+  const getMuscleColor = (segmentName: string) => {
+      if (!muscleSplit) return { stroke: '#64748b', width: 4, filter: '' };
+
+      const sortedMuscles = Object.entries(muscleSplit).sort((a,b) => (b[1] as number) - (a[1] as number));
+      
+      let rank = -1;
+      sortedMuscles.forEach(([mName, _pct], idx) => {
+          if (idx > 2) return; 
+          const mappedSegments = MUSCLE_MAP[mName] || [];
+          if (segmentName === 'torso' && mappedSegments.includes('torso')) rank = idx;
+          if (segmentName === 'shoulders' && mappedSegments.includes('shoulders')) rank = idx;
+          if (segmentName === 'upperArms' && mappedSegments.includes('upperArms')) rank = idx;
+          if (segmentName === 'forearms' && mappedSegments.includes('forearms')) rank = idx;
+          if (segmentName === 'thighs' && mappedSegments.includes('thighs')) rank = idx;
+          if (segmentName === 'shins' && mappedSegments.includes('shins')) rank = idx;
+          if (segmentName === 'hips' && mappedSegments.includes('hips')) rank = idx;
+      });
+
+      if (rank === 0) return { stroke: '#ef4444', width: 6, filter: 'url(#glow-primary)' }; // Red
+      if (rank === 1) return { stroke: '#f97316', width: 5, filter: 'url(#glow-secondary)' }; // Orange
+      if (rank === 2) return { stroke: '#3b82f6', width: 4, filter: 'url(#glow-tertiary)' }; // Blue
+      
+      return { stroke: '#475569', width: 4, filter: '' }; 
+  };
+
+  const Bone = ({ p1, p2, type }: { p1: Point, p2: Point, type: string }) => {
+      const style = getMuscleColor(type);
+      return <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={style.stroke} strokeWidth={style.width} strokeLinecap="round" filter={style.filter} />;
+  };
+
+  const Joint = ({ p }: { p: Point }) => (
+      <circle cx={p.x} cy={p.y} r={2.5} fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
+  );
+
   return (
-    <div className="w-full h-40 flex justify-center items-center bg-gym-900/50 rounded-xl border border-gym-700 mb-4 overflow-hidden relative">
-        <div className="absolute top-2 right-2 text-[10px] text-gray-500 font-mono">FORM CHECK</div>
-        <svg viewBox="0 0 100 100" className="w-full h-full text-white">
-            {renderFigure()}
-        </svg>
+    <div className="w-full h-48 bg-gym-900 rounded-xl border border-gym-700 mb-4 overflow-hidden relative shadow-inner">
+       <svg viewBox="0 0 100 100" className="w-full h-full">
+          <defs>
+            <filter id="glow-primary" x="-50%" y="-50%" width="200%" height="200%">
+               <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+               <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="glow-secondary" x="-50%" y="-50%" width="200%" height="200%">
+               <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+               <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="glow-tertiary" x="-50%" y="-50%" width="200%" height="200%">
+               <feGaussianBlur stdDeviation="1" result="coloredBlur"/>
+               <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Environment / Context */}
+          {(exerciseName.toLowerCase().includes('bench') || (exerciseName.toLowerCase().includes('press') && exerciseName.toLowerCase().includes('dumb'))) && (
+             <line x1="10" y1="65" x2="90" y2="65" stroke="#334155" strokeWidth="4" strokeLinecap="round" /> /* Bench */
+          )}
+          {(exerciseName.toLowerCase().includes('seated') || exerciseName.toLowerCase().includes('pec deck')) && (
+             <path d="M 35 90 L 35 60 L 65 60 L 65 90" stroke="#334155" strokeWidth="2" fill="none" /> /* Seat */
+          )}
+
+          {/* Skeleton Bones */}
+          <Bone p1={skel.head} p2={skel.neck} type="spine" />
+          <Bone p1={skel.neck} p2={skel.spineBottom} type="torso" />
+          
+          <Bone p1={skel.neck} p2={skel.shoulderL} type="shoulders" />
+          <Bone p1={skel.neck} p2={skel.shoulderR} type="shoulders" />
+          
+          <Bone p1={skel.shoulderL} p2={skel.elbowL} type="upperArms" />
+          <Bone p1={skel.shoulderR} p2={skel.elbowR} type="upperArms" />
+          
+          <Bone p1={skel.elbowL} p2={skel.wristL} type="forearms" />
+          <Bone p1={skel.elbowR} p2={skel.wristR} type="forearms" />
+          
+          <Bone p1={skel.spineBottom} p2={skel.hipL} type="hips" />
+          <Bone p1={skel.spineBottom} p2={skel.hipR} type="hips" />
+          
+          <Bone p1={skel.hipL} p2={skel.kneeL} type="thighs" />
+          <Bone p1={skel.hipR} p2={skel.kneeR} type="thighs" />
+          
+          <Bone p1={skel.kneeL} p2={skel.ankleL} type="shins" />
+          <Bone p1={skel.kneeR} p2={skel.ankleR} type="shins" />
+
+          {/* Head Circle */}
+          <circle cx={skel.head.x} cy={skel.head.y} r={4} fill="#cbd5e1" />
+
+          {/* Joints */}
+          <Joint p={skel.shoulderL} /> <Joint p={skel.shoulderR} />
+          <Joint p={skel.elbowL} /> <Joint p={skel.elbowR} />
+          <Joint p={skel.kneeL} /> <Joint p={skel.kneeR} />
+
+          {/* Props (Barbell, Dumbbell) */}
+          <circle cx={skel.wristL.x} cy={skel.wristL.y} r={3} fill="#ef4444" />
+          <circle cx={skel.wristR.x} cy={skel.wristR.y} r={3} fill="#ef4444" />
+       </svg>
+       
+       {/* Labels */}
+       <div className="absolute top-2 left-2 flex flex-col gap-1">
+          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Form Check</span>
+          {muscleSplit && (
+             <div className="flex gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_5px_#ef4444]"></span>
+                <span className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_5px_#f97316]"></span>
+                <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_5px_#3b82f6]"></span>
+             </div>
+          )}
+       </div>
     </div>
   );
 };

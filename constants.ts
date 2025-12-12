@@ -124,22 +124,24 @@ export const PUSH_A_DAY: WorkoutDay = {
       pacer: PACER_ISO_HOLD, metValue: 4.0, muscleSplit: { 'Side Delts': 100 }, motionType: 'raise', isCompound: false 
     },
     { 
-      id: 'pa_4', name: 'Overhead Cable Tricep Ext.', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 120, 
+      id: 'pa_4', name: 'Cable Rope Overhead Ext.', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 120, 
       cues: 'Elbows glued to ears. Deep stretch behind head.', 
       setup: 'Rope attachment high. Turn away from machine.',
       visualize: 'Elbows glued to your ears.',
       action: 'Let the rope pull your hands deep behind your head for a painful stretch. Extend forward without moving elbows.',
       muscleFocus: 'Tricep Long Head', targetGroup: 'Triceps', feeling: 'Tearing sensation in tricep.', 
-      pacer: PACER_PUSH, metValue: 4.0, muscleSplit: { 'Long Head Triceps': 90, 'Triceps': 10 }, motionType: 'press', isCompound: false 
+      pacer: { startDelay: 3, phases: [{ action: 'STRETCH', duration: 3, voiceCue: 'Stretch Back', breathing: 'Inhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Deep Stretch', breathing: 'Hold' }, { action: 'EXPLODE', duration: 1, voiceCue: 'Fire', breathing: 'Exhale' }] }, 
+      metValue: 4.0, muscleSplit: { 'Long Head Triceps': 90, 'Triceps': 10 }, motionType: 'press', isCompound: false 
     },
     { 
-      id: 'pa_5', name: 'Low-to-High Cable Fly', type: 'weighted', sets: 3, reps: '15', restSeconds: 90, 
-      cues: 'Uppercut motion. Scoop weight from hips to nose.', 
-      setup: 'Pulleys at the very bottom.',
-      visualize: 'An "Uppercut" motion.',
-      action: 'Scoop handles from your hips up to your nose level. Squeeze upper chest hard.',
-      muscleFocus: 'Upper/Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.', 
-      pacer: PACER_ISO_HOLD, metValue: 4.5, muscleSplit: { 'Upper Chest': 100 }, motionType: 'fly', isCompound: false 
+      id: 'pa_5', name: 'Pec Deck Fly', type: 'weighted', sets: 3, reps: '15', restSeconds: 90, 
+      cues: 'Keep tension constant. Squeeze inner chest hard.', 
+      setup: 'Seat height so handles are at chest level.',
+      visualize: 'Hugging a giant tree trunk.',
+      action: 'Open arms wide (3s). Don\'t let weight stack touch. Squeeze at center (1s).',
+      muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.', 
+      pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
+      metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false 
     },
   ]
 };
@@ -160,13 +162,14 @@ export const PULL_A_DAY: WorkoutDay = {
       pacer: PACER_PULL, metValue: 6.0, muscleSplit: { 'Upper Lats': 80, 'Teres Major': 10, 'Biceps': 10 }, motionType: 'pull', isCompound: true 
     },
     { 
-      id: 'pla_2', name: 'Chest-Supported Row', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120, 
-      cues: 'Wrap spine around bench. Crack a walnut with blades.', 
-      setup: 'Chest flat against the pad.',
-      visualize: 'Wrapping your spine around the bench.',
-      action: 'Pull elbows back behind your ribs. Squeeze shoulder blades together like cracking a walnut.',
+      id: 'pla_2', name: 'Seated Cable Row (Triangle)', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120, 
+      cues: 'Sit tall. Crack a walnut with blades.', 
+      setup: 'Triangle handle. Sit with slight arch.',
+      visualize: 'Cracking a walnut between your shoulder blades.',
+      action: 'Pull handle to stomach (1s). Squeeze (1s). Release forward (3s).',
       muscleFocus: 'Mid-Back', targetGroup: 'Back', feeling: 'Pinching a pencil between blades.', 
-      pacer: PACER_PULL, metValue: 6.0, muscleSplit: { 'Mid Back': 70, 'Lats': 20, 'Biceps': 10 }, motionType: 'pull', isCompound: true 
+      pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] }, 
+      metValue: 6.0, muscleSplit: { 'Mid Back': 70, 'Lats': 20, 'Biceps': 10 }, motionType: 'pull', isCompound: true 
     },
     { 
       id: 'pla_3', name: 'Face Pulls', type: 'weighted', sets: 4, reps: '15-20', restSeconds: 90, 
@@ -188,13 +191,14 @@ export const PULL_A_DAY: WorkoutDay = {
       metValue: 4.0, muscleSplit: { 'Bicep Long Head': 80, 'Biceps': 20 }, motionType: 'curl', isCompound: false 
     },
     { 
-      id: 'pla_5', name: 'Preacher Curls', type: 'weighted', sets: 3, reps: '12', restSeconds: 90, 
-      cues: 'Armpits snug. Drive triceps into pad. Full stretch.', 
-      setup: 'Machine or EZ Bar. Armpits snug over the pad.',
-      visualize: 'Driving your triceps into the pad.',
-      action: 'Curl up and squeeze hard. Lower slowly—do not fully straighten the arm at the bottom (keep tension).',
-      muscleFocus: 'Bicep Short Head', targetGroup: 'Biceps', feeling: 'Lower bicep tension.', 
-      pacer: PACER_PULL, metValue: 4.0, muscleSplit: { 'Bicep Short Head': 80, 'Brachialis': 20 }, motionType: 'curl', isCompound: false 
+      id: 'pla_5', name: 'Seated Bicep Curl Machine', type: 'weighted', sets: 3, reps: '12', restSeconds: 90, 
+      cues: 'Drive triceps into pad. Do not extend fully.', 
+      setup: 'Adjust seat so armpit is snug over pad.',
+      visualize: 'Driving triceps into the pad.',
+      action: 'Curl up (1s). Lower slowly (3s). Keep a slight bend at bottom to maintain tension.',
+      muscleFocus: 'Bicep Short Head', targetGroup: 'Biceps', feeling: 'Isolated bicep pump.', 
+      pacer: { startDelay: 3, phases: [{ action: 'CURL', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'LOWER', duration: 3, voiceCue: 'Control', breathing: 'Inhale' }] }, 
+      metValue: 4.0, muscleSplit: { 'Bicep Short Head': 80, 'Brachialis': 20 }, motionType: 'curl', isCompound: false 
     },
   ]
 };
@@ -299,14 +303,14 @@ export const PUSH_B_DAY: WorkoutDay = {
       pacer: PACER_PUSH, metValue: 5.0, muscleSplit: { 'Triceps': 100 }, motionType: 'press', isCompound: false 
     },
     { 
-      id: 'pb_5', name: 'Flat Fly (Bottom Partials)', type: 'weighted', sets: 3, reps: '15', restSeconds: 90, 
-      cues: 'Only bottom 50% of rep. Deep stretch, halfway up, back down.', 
-      setup: 'Flat bench. Light dumbbells.',
-      visualize: 'Hugging a massive tree.',
-      action: 'Lower arms wide for a deep stretch. Only come halfway up. Go back down immediately.',
-      muscleFocus: 'Chest Stretch', targetGroup: 'Chest', feeling: 'Extreme stretch.', 
-      pacer: { ...PACER_PUSH, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'HALF UP', duration: 1, voiceCue: 'Half Way', breathing: 'Exhale' }] }, 
-      metValue: 4.5, muscleSplit: { 'Chest (Stretch)': 100 }, motionType: 'fly', isCompound: false 
+      id: 'pb_5', name: 'Pec Deck Fly', type: 'weighted', sets: 3, reps: '15', restSeconds: 90, 
+      cues: 'Keep tension constant. Squeeze inner chest hard.', 
+      setup: 'Seat height so handles are at chest level.',
+      visualize: 'Hugging a giant tree trunk.',
+      action: 'Open arms wide (3s). Don\'t let weight stack touch. Squeeze at center (1s).',
+      muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.', 
+      pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
+      metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false 
     },
   ]
 };
@@ -328,21 +332,23 @@ export const PULL_B_DAY: WorkoutDay = {
     },
     { 
       id: 'plb_2', name: 'Seated Cable Row (Wide)', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120, 
-      cues: 'Pull to upper chest/neck. Elbows flared out.', 
+      cues: 'Grip wide. Pull to upper abs. Flare elbows out.', 
       setup: 'Wide Lat bar attachment.',
       visualize: 'Spreading your elbows wide.',
-      action: 'Pull bar to upper abs/lower chest. Keep elbows flared out to hit upper back.',
+      action: 'Pull bar to upper abs/lower chest (1s). Keep elbows flared (1s). Release (3s).',
       muscleFocus: 'Upper Back', targetGroup: 'Back', feeling: 'Upper back thickness.', 
-      pacer: PACER_PULL, metValue: 6.0, muscleSplit: { 'Upper Back': 80, 'Rear Delts': 20 }, motionType: 'pull', isCompound: true 
+      pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] }, 
+      metValue: 6.0, muscleSplit: { 'Upper Back': 80, 'Rear Delts': 20 }, motionType: 'pull', isCompound: true 
     },
     { 
-      id: 'plb_3', name: 'Reverse Pec Deck / Fly', type: 'weighted', sets: 4, reps: '15', restSeconds: 90, 
-      cues: 'Push back of hands to walls. Don\'t shrug.', 
+      id: 'plb_3', name: 'Reverse Pec Deck', type: 'weighted', sets: 4, reps: '15', restSeconds: 90, 
+      cues: 'Push knuckles OUT to walls, not just back.', 
       setup: 'Facing the machine.',
-      visualize: 'Pushing the back of your hands to the walls.',
-      action: 'Open arms wide. Feel the burn in the back of the shoulder. Don\'t let shoulders shrug up.',
+      visualize: 'Trying to touch the side walls with your knuckles.',
+      action: 'Push hands back (2s). Hold (1s). Forward (1s). Don\'t shrug.',
       muscleFocus: 'Rear Delts', targetGroup: 'Shoulders', feeling: 'Rear shoulder isolation.', 
-      pacer: PACER_ISO_HOLD, metValue: 4.5, muscleSplit: { 'Rear Delts': 100 }, motionType: 'fly', isCompound: false 
+      pacer: { startDelay: 3, phases: [{ action: 'BACK', duration: 2, voiceCue: 'Push Back', breathing: 'Exhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Hold', breathing: 'Hold' }, { action: 'RETURN', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
+      metValue: 4.5, muscleSplit: { 'Rear Delts': 100 }, motionType: 'fly', isCompound: false 
     },
     { 
       id: 'plb_4', name: 'Hammer Curls', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 120, 
