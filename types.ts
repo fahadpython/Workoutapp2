@@ -38,6 +38,8 @@ export interface Exercise {
   muscleSplit?: Record<string, number>; // Percentage breakdown
   motionType?: MotionType; // Animation type
   isCompound?: boolean; // For algorithmic weight jumps
+  alternatives?: Exercise[]; // Swappable exercises
+  swapLabel?: string; // Reason for swap (e.g. "Better Isolation")
 }
 
 export interface WorkoutDay {
@@ -74,6 +76,7 @@ export interface SessionData {
   activeExerciseId: string | null; 
   activeTimer: ActiveTimer | null;
   isFinished: boolean;
+  swaps?: Record<string, string>; // Maps originalExerciseId -> chosenExerciseId
 }
 
 export interface UserStats {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
 import { SessionData, UserStats, DAYS_OF_WEEK, Exercise } from './types';
@@ -6,7 +7,7 @@ import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
 import StatsView from './components/StatsView';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame } from 'lucide-react';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock } from 'lucide-react';
 
 const App: React.FC = () => {
   // Lazy load state to prevent reading localStorage on every render and fix flash
@@ -27,6 +28,9 @@ const App: React.FC = () => {
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
   const [weeklyCalories, setWeeklyCalories] = useState(0);
 
+  // Session Timer State
+  const [elapsedTime, setElapsedTime] = useState(0);
+
   // Load dashboard stats on mount
   useEffect(() => {
     const stats = getDashboardStats();
@@ -43,6 +47,20 @@ const App: React.FC = () => {
   useEffect(() => {
     saveUserStats(userStats);
   }, [userStats]);
+
+  // Session Timer Effect
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (view === 'WORKOUT' && currentSession && !currentSession.isFinished) {
+        // Set initial
+        setElapsedTime(Math.floor((Date.now() - currentSession.startTime) / 1000));
+        
+        interval = setInterval(() => {
+            setElapsedTime(Math.floor((Date.now() - currentSession.startTime) / 1000));
+        }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [view, currentSession?.startTime, currentSession?.isFinished]);
 
   // Determine which workout plan to use
   const getActivePlan = () => {
@@ -74,6 +92,7 @@ const App: React.FC = () => {
       activeExerciseId: null,
       activeTimer: null,
       isFinished: false,
+      swaps: {}
     };
     setCurrentSession(newSession);
     setView('WORKOUT');
@@ -97,15 +116,49 @@ const App: React.FC = () => {
       });
   };
 
+  const handleSwapExercise = (originalId: string, newId: string) => {
+    if (!currentSession) return;
+    const newSwaps = { ...(currentSession.swaps || {}) };
+    // If swapping back to original, remove the key
+    if (originalId === newId) {
+        delete newSwaps[originalId];
+    } else {
+        newSwaps[originalId] = newId;
+    }
+    setCurrentSession({
+        ...currentSession,
+        swaps: newSwaps
+    });
+  };
+
   const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false) => {
     if (!currentSession || !currentSession.activeExerciseId || !activePlan) return;
     
     const exerciseId = currentSession.activeExerciseId;
     
-    // Check in both Plan and Custom exercises
-    const exercise = 
-        activePlan.exercises.find(e => e.id === exerciseId) || 
-        currentSession.customExercises?.find(e => e.id === exerciseId);
+    // Check in Plan (account for swaps), Custom exercises
+    let exercise: Exercise | undefined;
+    
+    // Check customs first
+    exercise = currentSession.customExercises?.find(e => e.id === exerciseId);
+    
+    if (!exercise) {
+        // Check Plan exercises (and their alternatives)
+        for (const ex of activePlan.exercises) {
+            if (ex.id === exerciseId) {
+                exercise = ex;
+                break;
+            }
+            // Check if it matches a swap ID
+            if (ex.alternatives) {
+                const alt = ex.alternatives.find(a => a.id === exerciseId);
+                if (alt) {
+                    exercise = alt;
+                    break;
+                }
+            }
+        }
+    }
     
     if (!exercise) return;
 
@@ -201,6 +254,53 @@ const App: React.FC = () => {
     });
   };
 
+  const formatTime = (sec: number) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}:${m<10?'0':''}${m}:${s<10?'0':''}${s}`;
+    return `${m}:${s<10?'0':''}${s}`;
+  };
+
+  const getProjectedEndTime = () => {
+    if (!activePlan || !currentSession) return null;
+    
+    // 1. Get List of Exercises (Original + Swaps + Customs)
+    const effectiveExercises = activePlan.exercises.map(ex => {
+       const swapId = currentSession.swaps?.[ex.id];
+       if (swapId && ex.alternatives) {
+           return ex.alternatives.find(a => a.id === swapId) || ex;
+       }
+       return ex;
+    }).concat(currentSession.customExercises || []);
+    
+    let remainingSeconds = 0;
+    
+    effectiveExercises.forEach(ex => {
+        const completedCount = currentSession.completedExercises[ex.id]?.length || 0;
+        const setsLeft = Math.max(0, ex.sets - completedCount);
+        
+        if (setsLeft > 0) {
+            const isCardio = ex.type === 'cardio';
+            // Estimate duration per set
+            let setDuration = 45; // Default lifting under tension
+            if (isCardio) {
+                 // Try to parse '10 mins'
+                 const match = ex.reps.match(/(\d+)/);
+                 if (match) setDuration = parseInt(match[0]) * 60;
+            }
+            
+            // Add Rest Time (Rest applies after set)
+            remainingSeconds += setsLeft * (setDuration + ex.restSeconds);
+        }
+    });
+
+    if (remainingSeconds === 0) return "Finishing...";
+
+    const endTime = new Date(Date.now() + remainingSeconds * 1000);
+    return endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   const creatineStats = getCreatineStats(userStats.creatineHistory);
 
   // --- RENDER: STATS VIEW ---
@@ -251,22 +351,42 @@ const App: React.FC = () => {
 
     // Helper to find the active exercise object
     // Safe lookup: activePlan might be null if day changed, but activeSession persists logic via getActivePlan()
-    const exerciseList = activePlan ? [...activePlan.exercises, ...(currentSession.customExercises || [])] : [];
-    const activeExercise = currentSession.activeExerciseId 
-        ? exerciseList.find(e => e.id === currentSession.activeExerciseId)
-        : null;
+    const planExercises = activePlan ? activePlan.exercises : [];
+    // We need to resolve swaps for the active exercise ID lookup
+    let activeExercise: Exercise | undefined = undefined;
+
+    if (currentSession.activeExerciseId) {
+        const id = currentSession.activeExerciseId;
+        // Check customs
+        activeExercise = currentSession.customExercises?.find(e => e.id === id);
+        
+        if (!activeExercise && activePlan) {
+            // Check plan exercises + alternatives
+             for (const ex of activePlan.exercises) {
+                if (ex.id === id) { activeExercise = ex; break; }
+                if (ex.alternatives) {
+                    const alt = ex.alternatives.find(a => a.id === id);
+                    if (alt) { activeExercise = alt; break; }
+                }
+            }
+        }
+    }
 
     // ACTIVE WORKOUT VIEWS
     return (
       <div className="min-h-screen bg-gym-900 text-white p-4 flex flex-col max-w-md mx-auto relative overflow-hidden">
         {/* Header */}
-        <div className="flex justify-between items-center mb-4 z-10">
+        <div className="flex justify-between items-center mb-4 z-10 bg-gym-900/90 backdrop-blur pb-2 border-b border-gym-800 sticky top-0">
            <button onClick={handleCompleteWorkoutSummary} className="text-xs text-gray-500 hover:text-white uppercase font-bold tracking-widest">
              Exit
            </button>
-           <div className="flex items-center gap-2">
-             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-             <span className="text-xs font-mono text-gray-400">SESSION LIVE</span>
+           <div className="flex flex-col items-end">
+             <div className="flex items-center gap-2">
+                 <Clock size={12} className="text-gym-accent" />
+                 <span className="font-mono font-bold text-sm text-white">{formatTime(elapsedTime)}</span>
+                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse ml-1"></div>
+             </div>
+             <span className="text-[10px] text-gray-500">Est. End: {getProjectedEndTime() || '--:--'}</span>
            </div>
         </div>
         
@@ -284,6 +404,7 @@ const App: React.FC = () => {
             onSelectExercise={handleSelectExercise}
             onFinishWorkout={handleFinishWorkout}
             onAddCustomExercise={handleAddCustomExercise}
+            onSwapExercise={handleSwapExercise}
           />
         ) : null}
 

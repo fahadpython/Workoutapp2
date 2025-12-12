@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
@@ -233,6 +232,7 @@ const ExerciseCard: React.FC<Props> = ({
   
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const pacerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTickRef = useRef<number>(0);
 
   const isCardio = exercise.type === 'cardio';
 
@@ -358,7 +358,12 @@ const ExerciseCard: React.FC<Props> = ({
 
       const currentPhase = phases[phaseIdx];
       setCurrentPhaseIndex(phaseIdx);
-      setPhaseTimeLeft(currentPhase.duration);
+      
+      // Calculate times using real Date timestamps for smooth high-framerate updates
+      const durationMs = currentPhase.duration * 1000;
+      const startTime = Date.now();
+      
+      setPhaseTimeLeft(currentPhase.duration); // Init display
 
       // --- PHASE START HAPTICS ---
       const action = currentPhase.action.toUpperCase();
@@ -383,25 +388,35 @@ const ExerciseCard: React.FC<Props> = ({
               speak(currentPhase.voiceCue);
           }
       }
+      
+      lastTickRef.current = Math.ceil(currentPhase.duration);
 
-      let timeLeft = currentPhase.duration * 10;
+      // High-speed timer for smooth UI (~30fps)
       pacerTimerRef.current = setInterval(() => {
-          timeLeft--;
-          if (timeLeft % 10 === 0) {
-              setPhaseTimeLeft(timeLeft / 10);
-              
-              // --- RHYTHMIC METRONOME HAPTICS ---
-              // For slow phases (Eccentric/Lowering), provide a faint heartbeat tick every second
-              // This helps the user gauge speed blindly without needing audio.
-              if (['LOWER', 'DOWN', 'STRETCH', 'RELEASE', 'OPEN'].some(k => currentPhase.action.toUpperCase().includes(k))) {
-                  // Only tick if not at the very end (the next phase will vibe)
-                  if (timeLeft > 0) {
-                      vibrate(20); // Very weak/short tick
+          const now = Date.now();
+          const elapsed = now - startTime;
+          const remainingMs = Math.max(0, durationMs - elapsed);
+          const remainingSec = remainingMs / 1000;
+          
+          setPhaseTimeLeft(remainingSec);
+          
+          // --- RHYTHMIC METRONOME HAPTICS ---
+          // Check if we crossed a second boundary for tick
+          const currentCeil = Math.ceil(remainingSec);
+          if (currentCeil < lastTickRef.current) {
+               lastTickRef.current = currentCeil;
+               // Tick only on lowering phases for rhythm
+               if (['LOWER', 'DOWN', 'STRETCH', 'RELEASE', 'OPEN'].some(k => currentPhase.action.toUpperCase().includes(k))) {
+                  if (remainingSec > 0.1) {
+                      vibrate(20); 
                   }
-              }
+               }
           }
 
-          if (timeLeft <= 0) {
+          if (remainingMs <= 0) {
+              // Fix: cast to any or check existence to avoid NodeJS namespace error in browser
+              if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
+              
               const nextPhaseIdx = phaseIdx + 1;
               if (nextPhaseIdx < phases.length) {
                   runPhase(nextPhaseIdx);
@@ -410,7 +425,7 @@ const ExerciseCard: React.FC<Props> = ({
                   runPhase(0);
               }
           }
-      }, 100);
+      }, 33); // 33ms ~ 30fps update rate for smoothness
   };
 
   const handleFinishSet = () => {
@@ -646,7 +661,7 @@ const ExerciseCard: React.FC<Props> = ({
                         </div>
                         <div className="w-full bg-gym-800 rounded-full h-4 mb-8 overflow-hidden">
                             <div 
-                                className={`h-full transition-all duration-100 ease-linear ${activePhase.breathing === 'Exhale' ? 'bg-gym-success' : 'bg-blue-500'}`}
+                                className={`h-full ${activePhase.breathing === 'Exhale' ? 'bg-gym-success' : 'bg-blue-500'}`}
                                 style={{ width: `${(phaseTimeLeft / activePhase.duration) * 100}%` }}
                             ></div>
                         </div>
