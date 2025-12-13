@@ -88,6 +88,30 @@ const WARMUP_EXERCISES: Exercise[] = [
     action: 'Roll wrists in circles for 30 seconds.',
     muscleFocus: 'Wrists', targetGroup: 'Warmup', feeling: 'Lubricated joints', isWarmup: true, pacer: PACER_FAST, metValue: 2.0, muscleSplit: { 'Forearms': 100 }, motionType: 'curl', isCompound: false 
   },
+  { 
+    id: 'wu_pushups', name: 'Push Ups (Warmup)', type: 'weighted', sets: 2, reps: '15', restSeconds: 45, 
+    cues: 'Chest to floor. Core tight.', 
+    setup: 'Plank position. Hands shoulder width.', 
+    visualize: 'Pushing the earth away.', 
+    action: 'Lower chest to floor. Press up explosively.',
+    muscleFocus: 'Chest/Tris', targetGroup: 'Warmup', feeling: 'Upper body pump', isWarmup: true, pacer: PACER_FAST, metValue: 3.8, muscleSplit: { 'Chest': 60, 'Triceps': 20, 'Shoulders': 20 }, motionType: 'press', isCompound: true 
+  },
+  { 
+    id: 'wu_pullups', name: 'Pull Ups (Assisted/BW)', type: 'weighted', sets: 2, reps: '8-10', restSeconds: 45, 
+    cues: 'Chin over bar. Control the drop.', 
+    setup: 'Grip bar slightly wider than shoulders.', 
+    visualize: 'Driving elbows into back pockets.', 
+    action: 'Pull chin over bar. Lower fully.',
+    muscleFocus: 'Lats', targetGroup: 'Warmup', feeling: 'Back activation', isWarmup: true, pacer: PACER_PULL, metValue: 5.0, muscleSplit: { 'Lats': 80, 'Biceps': 20 }, motionType: 'pull', isCompound: true 
+  },
+  { 
+    id: 'wu_punching', name: 'Shadow Boxing', type: 'cardio', sets: 1, reps: '2 mins', restSeconds: 30, 
+    cues: 'Keep moving on toes. Snap punches.', 
+    setup: 'Staggered stance. Hands up.', 
+    visualize: 'Fighting an opponent.', 
+    action: 'Throw 1-2 combos (Jab, Cross). Move head.',
+    muscleFocus: 'Full Body', targetGroup: 'Warmup', feeling: 'Elevated heart rate', isWarmup: true, pacer: PACER_FAST, metValue: 8.0, muscleSplit: { 'Shoulders': 40, 'Core': 30, 'Legs': 30 }, motionType: 'cardio', isCompound: true 
+  },
 ];
 
 export const PUSH_A_DAY: WorkoutDay = {

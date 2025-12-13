@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { WorkoutDay, SessionData, ExerciseType, MuscleGroup, Exercise, MotionType, PacerConfig } from '../types';
-import { CheckCircle, ChevronRight, Layers, PlusCircle, Footprints, Dumbbell, Activity, Eye, Zap, Wrench, RefreshCw, Star } from 'lucide-react';
+import { CheckCircle, ChevronRight, Layers, PlusCircle, Footprints, Dumbbell, Activity, Eye, Zap, Wrench, RefreshCw, Star, Flame } from 'lucide-react';
 import { DEFAULT_PACER_STOPWATCH } from '../constants';
 
 interface Props {
@@ -29,9 +28,6 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
   const [customCues, setCustomCues] = useState('');
 
   // Merge plan exercises with custom ones for this session
-  // Logic: For each plan exercise, check if there is a swap in session.swaps
-  // If so, replace it in the display list, but keep the original ID ref for swapping back
-  
   const displayExercises: Exercise[] = [...plan.exercises];
   
   // Map standard plan exercises to their swapped versions if applicable
@@ -46,13 +42,15 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
 
   const fullList = [...renderedExercises, ...(session.customExercises || [])];
 
+  const warmups = fullList.filter(e => e.isWarmup);
+  const mainLifts = fullList.filter(e => !e.isWarmup);
+
   const isAllComplete = fullList.every(ex => {
     const logs = session.completedExercises[ex.id] || [];
     return logs.length >= ex.sets;
   });
 
   const getPacerForMotion = (motion: MotionType): PacerConfig => {
-      // Auto-generate tempo protocol based on bio-mechanics
       switch (motion) {
           case 'press': 
           case 'hinge':
@@ -94,28 +92,21 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
           reps: isCardio ? '10 mins' : '10',
           restSeconds: 60,
           cues: customCues || 'Custom Exercise',
-          
-          // Advanced Details
           setup: customSetup,
           visualize: customVisualize,
           action: customAction,
           muscleFocus: customMuscle,
           targetGroup: customMuscle,
-          
-          // Auto-generated analytics
           feeling: 'N/A',
           metValue: isCardio ? 8 : 4,
-          muscleSplit: { [customMuscle]: 100 }, // Assume 100% focus on selected group
+          muscleSplit: { [customMuscle]: 100 }, 
           motionType: isCardio ? 'cardio' : customMotion,
-          
-          // Tempo Protocol
           pacer: isCardio ? DEFAULT_PACER_STOPWATCH : getPacerForMotion(customMotion),
-          isCompound: ['Chest', 'Back', 'Legs'].includes(customMuscle) // Auto-detect likely compound
+          isCompound: ['Chest', 'Back', 'Legs'].includes(customMuscle)
       };
       
       onAddCustomExercise(newEx);
       
-      // Reset Form
       setIsAdding(false);
       setCustomName('');
       setCustomCues('');
@@ -128,6 +119,82 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
   const muscleOptions: MuscleGroup[] = ['Chest', 'Back', 'Legs', 'Shoulders', 'Triceps', 'Biceps', 'Abs', 'Other'];
   const motionOptions: MotionType[] = ['press', 'pull', 'hinge', 'curl', 'raise', 'fly', 'hold'];
 
+  const ExerciseItem: React.FC<{ exercise: Exercise, index: number }> = ({ exercise, index }) => {
+      const logs = session.completedExercises[exercise.id] || [];
+      const isComplete = logs.length >= exercise.sets;
+      const isStarted = logs.length > 0 && !isComplete;
+      const hasMonster = logs.some(l => l.isMonsterSet);
+      const isCardio = exercise.type === 'cardio';
+      
+      const originalId = (exercise as any).originalId || exercise.id;
+      const originalExercise = plan.exercises.find(e => e.id === originalId);
+      const hasAlternatives = originalExercise?.alternatives && originalExercise.alternatives.length > 0;
+      const isSwapped = originalId !== exercise.id;
+
+      return (
+        <div className="relative group mb-3">
+            <button
+            onClick={() => onSelectExercise(exercise.id)}
+            className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between z-10 relative
+                ${isComplete 
+                ? 'bg-gym-800/40 border-gym-700 opacity-60' 
+                : isStarted 
+                    ? 'bg-gym-800 border-gym-accent/50 shadow-sm' 
+                    : exercise.isWarmup ? 'bg-orange-900/10 border-orange-500/20 hover:border-orange-500/40' : 'bg-gym-800 border-gym-700 hover:border-gym-600'
+                }
+            `}
+            >
+            <div className="flex items-center gap-4">
+                <div className={`font-mono text-sm w-4 ${exercise.isWarmup ? 'text-orange-500 font-bold' : 'text-gray-500'}`}>{index + 1}</div>
+                <div>
+                <h3 className={`font-bold ${isComplete ? 'text-gray-400 line-through' : exercise.isWarmup ? 'text-orange-100' : 'text-white'}`}>
+                    {exercise.name}
+                </h3>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {isCardio && <Footprints size={12} className="text-blue-400"/>}
+                    <p className={`text-xs ${exercise.isWarmup ? 'text-orange-400/70' : 'text-gray-400'}`}>
+                        {logs.length}/{exercise.sets} Sets • {exercise.reps} {isCardio ? '' : 'Reps'}
+                    </p>
+                    {hasMonster && <span className="text-[10px] px-1 rounded bg-purple-500/20 text-purple-400 border border-purple-500/40 flex items-center gap-0.5"><Layers size={8}/> Monster</span>}
+                    {isSwapped && <span className="text-[10px] px-1 rounded bg-gym-accent/20 text-gym-accent border border-gym-accent/40 flex items-center gap-0.5"><Star size={8} fill="currentColor"/> {exercise.swapLabel || 'Modified'}</span>}
+                </div>
+                </div>
+            </div>
+            
+            <div className={`${exercise.isWarmup ? 'text-orange-500' : 'text-gray-500'} group-hover:text-white transition-colors`}>
+                {isComplete ? <CheckCircle className="text-gym-success" size={20} /> : <ChevronRight size={20} />}
+            </div>
+            </button>
+            
+            {hasAlternatives && onSwapExercise && !exercise.isWarmup && (
+                <div className="absolute top-4 right-12 z-20">
+                    {isSwapped ? (
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); onSwapExercise(originalId, originalId); }}
+                            className="p-1.5 bg-gym-700 rounded-full text-gray-400 hover:text-white hover:bg-gym-600 shadow-md border border-gym-600"
+                            title="Revert to Original"
+                         >
+                            <RefreshCw size={14} />
+                         </button>
+                    ) : (
+                         <div className="flex gap-1">
+                            {originalExercise!.alternatives!.map(alt => (
+                                <button 
+                                    key={alt.id}
+                                    onClick={(e) => { e.stopPropagation(); onSwapExercise(originalId, alt.id); }}
+                                    className="px-2 py-1 bg-gym-800/80 backdrop-blur rounded-md border border-gym-600 text-[10px] font-bold text-gym-accent hover:bg-gym-700 hover:text-white shadow-sm"
+                                >
+                                    Swap: {alt.name}
+                                </button>
+                            ))}
+                         </div>
+                    )}
+                </div>
+            )}
+        </div>
+      );
+  };
+
   return (
     <div className="flex flex-col h-full animate-in fade-in">
       <div className="mb-6">
@@ -135,86 +202,25 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
         <p className="text-sm text-gym-accent">{plan.focus}</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-3 pb-32 no-scrollbar">
-        {fullList.map((exercise, index) => {
-          const logs = session.completedExercises[exercise.id] || [];
-          const isComplete = logs.length >= exercise.sets;
-          const isStarted = logs.length > 0 && !isComplete;
-          const hasMonster = logs.some(l => l.isMonsterSet);
-          const isCardio = exercise.type === 'cardio';
-          
-          // Check for original exercise to see if alternatives exist
-          // 'exercise' here might be the swapped one, so we need to find the original source if it was swapped
-          // We tagged it with 'originalId' above
-          const originalId = (exercise as any).originalId || exercise.id;
-          const originalExercise = plan.exercises.find(e => e.id === originalId);
-          const hasAlternatives = originalExercise?.alternatives && originalExercise.alternatives.length > 0;
-          const isSwapped = originalId !== exercise.id;
-
-          return (
-            <div key={exercise.id} className="relative group">
-                <button
-                onClick={() => onSelectExercise(exercise.id)}
-                className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between z-10 relative
-                    ${isComplete 
-                    ? 'bg-gym-800/40 border-gym-700 opacity-60' 
-                    : isStarted 
-                        ? 'bg-gym-800 border-gym-accent/50 shadow-sm' 
-                        : 'bg-gym-800 border-gym-700 hover:border-gym-600'
-                    }
-                `}
-                >
-                <div className="flex items-center gap-4">
-                    <div className="text-gray-500 font-mono text-sm w-4">{index + 1}</div>
-                    <div>
-                    <h3 className={`font-bold ${isComplete ? 'text-gray-400 line-through' : 'text-white'}`}>
-                        {exercise.name}
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {isCardio && <Footprints size={12} className="text-blue-400"/>}
-                        <p className="text-xs text-gray-400">
-                            {logs.length}/{exercise.sets} Sets • {exercise.reps} {isCardio ? '' : 'Reps'}
-                        </p>
-                        {hasMonster && <span className="text-[10px] px-1 rounded bg-purple-500/20 text-purple-400 border border-purple-500/40 flex items-center gap-0.5"><Layers size={8}/> Monster</span>}
-                        {isSwapped && <span className="text-[10px] px-1 rounded bg-gym-accent/20 text-gym-accent border border-gym-accent/40 flex items-center gap-0.5"><Star size={8} fill="currentColor"/> {exercise.swapLabel || 'Modified'}</span>}
-                    </div>
-                    </div>
-                </div>
-                
-                <div className="text-gray-500 group-hover:text-white transition-colors">
-                    {isComplete ? <CheckCircle className="text-gym-success" size={20} /> : <ChevronRight size={20} />}
-                </div>
-                </button>
-                
-                {/* Swap Button Logic */}
-                {hasAlternatives && onSwapExercise && (
-                    <div className="absolute top-4 right-12 z-20">
-                        {isSwapped ? (
-                             <button 
-                                onClick={(e) => { e.stopPropagation(); onSwapExercise(originalId, originalId); }}
-                                className="p-1.5 bg-gym-700 rounded-full text-gray-400 hover:text-white hover:bg-gym-600 shadow-md border border-gym-600"
-                                title="Revert to Original"
-                             >
-                                <RefreshCw size={14} />
-                             </button>
-                        ) : (
-                             <div className="flex gap-1">
-                                {originalExercise!.alternatives!.map(alt => (
-                                    <button 
-                                        key={alt.id}
-                                        onClick={(e) => { e.stopPropagation(); onSwapExercise(originalId, alt.id); }}
-                                        className="px-2 py-1 bg-gym-800/80 backdrop-blur rounded-md border border-gym-600 text-[10px] font-bold text-gym-accent hover:bg-gym-700 hover:text-white shadow-sm"
-                                    >
-                                        Swap: {alt.name}
-                                    </button>
-                                ))}
-                             </div>
-                        )}
-                    </div>
-                )}
+      <div className="flex-1 overflow-y-auto pb-32 no-scrollbar">
+        
+        {/* Warmups */}
+        {warmups.length > 0 && (
+            <div className="mb-6 animate-in slide-in-from-left-2">
+                <h3 className="text-orange-400 font-black uppercase text-xs tracking-widest mb-3 flex items-center gap-2">
+                    <Flame size={12} fill="currentColor" /> Warmup Routine
+                </h3>
+                {warmups.map((ex, i) => <ExerciseItem key={ex.id} exercise={ex} index={i} />)}
             </div>
-          );
-        })}
+        )}
+
+        {/* Main Workout */}
+        <div>
+            <h3 className="text-gym-accent font-black uppercase text-xs tracking-widest mb-3 flex items-center gap-2">
+                <Dumbbell size={12} fill="currentColor" /> Main Workout
+            </h3>
+            {mainLifts.map((ex, i) => <ExerciseItem key={ex.id} exercise={ex} index={i} />)}
+        </div>
 
         {/* --- ADD CUSTOM EXERCISE SECTION --- */}
         <div className="pt-4 border-t border-gym-700 mt-4">
