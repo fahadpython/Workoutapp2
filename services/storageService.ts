@@ -1,11 +1,12 @@
 
-import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation } from '../types';
+import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration } from '../types';
 import { ALL_WORKOUTS } from '../constants';
 
 const KEYS = {
   SESSION: 'iron_guide_session_v2',
   STATS: 'iron_guide_stats_v2',
   HISTORY: 'iron_guide_history_v2',
+  CALIBRATION: 'iron_guide_calibration_v1',
 };
 
 // Dynamically aggregate all exercises from the new schedule
@@ -189,7 +190,24 @@ export const clearAllData = () => {
   localStorage.removeItem(KEYS.SESSION);
   localStorage.removeItem(KEYS.STATS);
   localStorage.removeItem(KEYS.HISTORY);
+  localStorage.removeItem(KEYS.CALIBRATION);
   window.location.reload();
+};
+
+// --- Calibration Logic ---
+
+export const saveCalibration = (data: MotionCalibration) => {
+  const raw = localStorage.getItem(KEYS.CALIBRATION);
+  const db = raw ? JSON.parse(raw) : {};
+  db[data.exerciseId] = data;
+  localStorage.setItem(KEYS.CALIBRATION, JSON.stringify(db));
+};
+
+export const getCalibration = (exerciseId: string): MotionCalibration | null => {
+  const raw = localStorage.getItem(KEYS.CALIBRATION);
+  if (!raw) return null;
+  const db = JSON.parse(raw);
+  return db[exerciseId] || null;
 };
 
 // --- Analytics ---

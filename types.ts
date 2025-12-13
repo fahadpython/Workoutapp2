@@ -118,4 +118,12 @@ export interface CoachRecommendation {
   reason: string;
 }
 
+export interface MotionCalibration {
+  exerciseId: string;
+  avgTime: number; // in ms
+  peakForce: number; // in G
+  position: 'Pocket' | 'Armband' | 'Hand';
+  calibratedAt: string; // ISO Date
+}
+
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

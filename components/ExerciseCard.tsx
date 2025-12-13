@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
+import MotionTracker from './MotionTracker';
 
 interface Props {
   exercise: Exercise;
@@ -224,18 +225,8 @@ const ExerciseCard: React.FC<Props> = ({
   const [showMonsterPrompt, setShowMonsterPrompt] = useState(false);
   const [plateauAlert, setPlateauAlert] = useState<string | null>(null);
   const [showLeveler, setShowLeveler] = useState(false);
-
-  // --- PACER ENGINE STATE ---
-  const [isPacing, setIsPacing] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [pacerRepCount, setPacerRepCount] = useState(0); 
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
-  const [phaseTimeLeft, setPhaseTimeLeft] = useState(0);
-  const [pacerStatus, setPacerStatus] = useState<'IDLE' | 'COUNTDOWN' | 'ACTIVE'>('IDLE');
-  
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-  const pacerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastTickRef = useRef<number>(0);
+  const [showMotionTracker, setShowMotionTracker] = useState(false);
+  const [useSensors, setUseSensors] = useState(true);
 
   const isCardio = exercise.type === 'cardio';
 
@@ -254,12 +245,6 @@ const ExerciseCard: React.FC<Props> = ({
     if (pCheck.isStalled) {
         setPlateauAlert(pCheck.recommendation);
     }
-
-    if ('speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis;
-    }
-
-    return () => stopPacer();
   }, [exercise.id, completedSets.length]);
 
   useEffect(() => {
@@ -272,165 +257,6 @@ const ExerciseCard: React.FC<Props> = ({
     }
   }, [metric1, metric2, exercise.metValue, isCardio]);
 
-  const vibrate = (pattern: number | number[]) => {
-      if ('vibrate' in navigator) {
-          navigator.vibrate(pattern);
-      }
-  };
-
-  const speak = (text: string, rate: number = 1.2, pitch: number = 1) => {
-    if (isMuted) return;
-    if (!synthRef.current) return;
-    synthRef.current.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = rate; 
-    utterance.pitch = pitch;
-    const voices = synthRef.current.getVoices();
-    const preferred = voices.find(v => v.lang.includes('en') && v.name.includes('Google')) || voices[0];
-    if (preferred) utterance.voice = preferred;
-    synthRef.current.speak(utterance);
-  };
-
-  const startPacer = () => {
-    setIsPacing(true);
-    setPacerStatus('COUNTDOWN');
-    setPacerRepCount(0);
-    setCurrentPhaseIndex(0);
-    
-    let countdown = 3;
-    speak(`Starting in ${countdown}`);
-    vibrate(50); // Small pulse
-
-    pacerTimerRef.current = setInterval(() => {
-       countdown--;
-       if (countdown > 0) {
-           speak(countdown.toString());
-           vibrate(50);
-       } else if (countdown === 0) {
-           setPacerStatus('ACTIVE');
-           vibrate(200); // Long pulse on START
-           if (isCardio) {
-               startStopwatch();
-           } else {
-               runPhase(0);
-           }
-       }
-    }, 1000);
-  };
-
-  const startStopwatch = () => {
-      if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-      speak("Go!");
-      
-      let seconds = 0;
-      pacerTimerRef.current = setInterval(() => {
-          seconds++;
-          setPacerRepCount(seconds);
-          if (seconds % 60 === 0) {
-              const mins = seconds / 60;
-              speak(`${mins} minutes`);
-              vibrate(100);
-          }
-      }, 1000);
-  };
-
-  const stopPacer = () => {
-    if (isCardio && isPacing && pacerStatus === 'ACTIVE') {
-        const mins = Math.ceil(pacerRepCount / 60);
-        setMetric2(mins.toString());
-    }
-
-    setIsPacing(false);
-    setPacerStatus('IDLE');
-    if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-    synthRef.current?.cancel();
-
-    // Context-Aware Voice Cues
-    if (setMode === 1) {
-        setTimeout(() => speak("Drop the weight! Keep going!", 1.3, 1.2), 300);
-    } else if (setMode === 2) {
-        setTimeout(() => speak("Superset! Move to next exercise!", 1.3, 1.2), 300);
-    }
-  };
-
-  const runPhase = (phaseIdx: number) => {
-      if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-
-      const phases = exercise.pacer.phases;
-      if (!phases || phases.length === 0) return;
-
-      const currentPhase = phases[phaseIdx];
-      setCurrentPhaseIndex(phaseIdx);
-      
-      // Calculate times using real Date timestamps for smooth high-framerate updates
-      const durationMs = currentPhase.duration * 1000;
-      const startTime = Date.now();
-      
-      setPhaseTimeLeft(currentPhase.duration); // Init display
-
-      // --- PHASE START HAPTICS ---
-      const action = currentPhase.action.toUpperCase();
-      
-      // 1. Concentric / Explosive (GO) - Sharp, Strong
-      if (['PRESS', 'DRIVE', 'PULL', 'UP', 'EXPLODE', 'CURL', 'CONTRACT', 'CLOSE'].some(k => action.includes(k))) {
-          vibrate(150); 
-      } 
-      // 2. Isometric / Hold (STOP/SQUEEZE) - Double Pulse
-      else if (['HOLD', 'SQUEEZE', 'PAUSE', 'STRETCH'].some(k => action.includes(k))) {
-          vibrate([70, 50, 70]);
-      } 
-      // 3. Eccentric / Lower (SLOW) - Small tick to start
-      else {
-          vibrate(30);
-      }
-
-      if (currentPhase.voiceCue) {
-          if (phaseIdx === 0 && pacerRepCount > 0) {
-              speak(`${pacerRepCount + 1}. ${currentPhase.voiceCue}`, 1.3);
-          } else {
-              speak(currentPhase.voiceCue);
-          }
-      }
-      
-      lastTickRef.current = Math.ceil(currentPhase.duration);
-
-      // High-speed timer for smooth UI (~30fps)
-      pacerTimerRef.current = setInterval(() => {
-          const now = Date.now();
-          const elapsed = now - startTime;
-          const remainingMs = Math.max(0, durationMs - elapsed);
-          const remainingSec = remainingMs / 1000;
-          
-          setPhaseTimeLeft(remainingSec);
-          
-          // --- RHYTHMIC METRONOME HAPTICS ---
-          // Check if we crossed a second boundary for tick
-          const currentCeil = Math.ceil(remainingSec);
-          if (currentCeil < lastTickRef.current) {
-               lastTickRef.current = currentCeil;
-               // Tick only on lowering phases for rhythm
-               if (['LOWER', 'DOWN', 'STRETCH', 'RELEASE', 'OPEN'].some(k => currentPhase.action.toUpperCase().includes(k))) {
-                  if (remainingSec > 0.1) {
-                      vibrate(20); 
-                  }
-               }
-          }
-
-          if (remainingMs <= 0) {
-              // Fix: cast to any or check existence to avoid NodeJS namespace error in browser
-              if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-              
-              const nextPhaseIdx = phaseIdx + 1;
-              if (nextPhaseIdx < phases.length) {
-                  runPhase(nextPhaseIdx);
-              } else {
-                  setPacerRepCount(prev => prev + 1);
-                  runPhase(0);
-              }
-          }
-      }, 33); // 33ms ~ 30fps update rate for smoothness
-  };
-
   const handleFinishSet = () => {
     const m1 = parseFloat(metric1) || 0;
     const m2 = parseFloat(metric2) || 0;
@@ -439,6 +265,7 @@ const ExerciseCard: React.FC<Props> = ({
     const isMonster = setMode === 2;
 
     onLogSet(m1, m2, isDrop, isMonster);
+    setShowMotionTracker(false);
     
     // Provide Coach Feedback
     if (!exercise.isWarmup && !isCardio) {
@@ -446,8 +273,6 @@ const ExerciseCard: React.FC<Props> = ({
         setCoachFeedback(feedback);
         setTimeout(() => setCoachFeedback(null), 4000);
     }
-    
-    if (isPacing) stopPacer();
     
     // LOGIC: Monster Set = Prompt next exercise. Drop Set = Prompt new weight (same exercise).
     if (isMonster) {
@@ -462,7 +287,6 @@ const ExerciseCard: React.FC<Props> = ({
         } else {
              setCoachFeedback("Drop weight! GO AGAIN!");
         }
-        // Keep in Drop Mode for chaining
     } else {
         setSetMode(0); 
     }
@@ -485,14 +309,6 @@ const ExerciseCard: React.FC<Props> = ({
           case 1: return 'Drop Set (No Rest)';
           case 2: return 'Monster Set (No Rest)';
           default: return 'Normal Set';
-      }
-  };
-
-  const getPhaseColor = (phase: PacerPhase) => {
-      switch (phase.breathing) {
-          case 'Exhale': return 'text-gym-success'; 
-          case 'Inhale': return 'text-blue-400'; 
-          default: return 'text-yellow-400'; 
       }
   };
 
@@ -522,18 +338,13 @@ const ExerciseCard: React.FC<Props> = ({
                            status === 'regression' ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 
                            'border-gym-600';
 
-  const activePhase: PacerPhase = exercise.pacer.phases[currentPhaseIndex] || { 
-      action: 'GO', 
-      breathing: 'Hold',
-      duration: 1,
-      voiceCue: ''
-  };
   const totalBurned = completedSets.reduce((acc, s) => acc + (s.calories || 0), 0);
   
-  const formatStopwatch = (secs: number) => {
-      const m = Math.floor(secs / 60);
-      const s = secs % 60;
-      return `${m}:${s < 10 ? '0' : ''}${s}`;
+  // Parse target reps for the tracker
+  const getTargetRepsInt = () => {
+      if (!exercise.reps) return 10;
+      const match = exercise.reps.match(/(\d+)/);
+      return match ? parseInt(match[0]) : 10;
   };
 
   return (
@@ -562,6 +373,17 @@ const ExerciseCard: React.FC<Props> = ({
           <BenchLeveler 
             targetAngle={exercise.benchAngle} 
             onClose={() => setShowLeveler(false)} 
+          />
+      )}
+
+      {/* --- MOTION TRACKER MODAL --- */}
+      {showMotionTracker && (
+          <MotionTracker 
+            exercise={exercise}
+            targetReps={getTargetRepsInt()}
+            useSensors={useSensors}
+            onRepCount={(count) => setMetric2(count.toString())}
+            onClose={() => setShowMotionTracker(false)}
           />
       )}
 
@@ -627,74 +449,6 @@ const ExerciseCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* --- ACTIVE PACER OVERLAY --- */}
-      {isPacing && (
-        <div className="absolute inset-0 z-50 bg-gym-900 flex flex-col items-center justify-center p-6 animate-in zoom-in-95">
-           
-           <button 
-             onClick={() => setIsMuted(!isMuted)}
-             className="absolute top-6 right-6 p-3 bg-gym-800 rounded-full border border-gym-700 text-white"
-           >
-              {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
-           </button>
-
-           {pacerStatus === 'COUNTDOWN' && (
-               <div className="text-center">
-                   <p className="text-2xl text-gray-400 mb-4">Get Ready</p>
-                   <div className="text-8xl font-black text-white animate-pulse">...</div>
-               </div>
-           )}
-
-           {pacerStatus === 'ACTIVE' && (
-               <>
-                <div className="mb-6 text-center w-full">
-                    <p className="text-gray-500 uppercase tracking-widest text-xs font-bold mb-2">{isCardio ? 'Duration' : 'Repetition'}</p>
-                    <h1 className="text-9xl font-black text-white mb-2 font-mono leading-none">
-                        {isCardio ? formatStopwatch(pacerRepCount) : pacerRepCount + 1}
-                    </h1>
-                </div>
-
-                {!isCardio ? (
-                    <>
-                        <div className={`w-64 h-64 rounded-full border-8 flex flex-col items-center justify-center relative mb-8 transition-all duration-300 ease-linear
-                            ${activePhase.breathing === 'Exhale' ? 'border-gym-success bg-gym-success/10 scale-110' : 
-                            activePhase.breathing === 'Inhale' ? 'border-blue-500 bg-blue-500/10 scale-90' : 
-                            'border-yellow-500 bg-yellow-500/10 scale-100'
-                            }
-                        `}>
-                            <p className={`text-4xl font-black uppercase italic tracking-tighter ${getPhaseColor(activePhase)}`}>
-                                {activePhase.action}
-                            </p>
-                            <div className="flex items-center gap-2 mt-2">
-                                <Wind size={20} className={getPhaseColor(activePhase)} />
-                                <span className="text-xl font-bold text-white">{activePhase.breathing}</span>
-                            </div>
-                        </div>
-                        <div className="w-full bg-gym-800 rounded-full h-4 mb-8 overflow-hidden">
-                            <div 
-                                className={`h-full ${activePhase.breathing === 'Exhale' ? 'bg-gym-success' : 'bg-blue-500'}`}
-                                style={{ width: `${(phaseTimeLeft / activePhase.duration) * 100}%` }}
-                            ></div>
-                        </div>
-                    </>
-                ) : (
-                    <div className="w-64 h-64 rounded-full border-8 border-gym-accent flex items-center justify-center mb-8 animate-pulse bg-gym-accent/10">
-                        <Footprints size={64} className="text-gym-accent" />
-                        <p className="absolute bottom-10 text-sm font-bold text-gym-accent">KEEP MOVING</p>
-                    </div>
-                )}
-               </>
-           )}
-
-           <button 
-             onClick={stopPacer}
-             className="bg-red-500/20 text-red-500 border border-red-500/50 px-8 py-4 rounded-full font-bold flex items-center gap-2"
-           >
-             <Square size={20} fill="currentColor" /> {isCardio ? 'Finish' : 'Stop Set'}
-           </button>
-        </div>
-      )}
-
       {/* --- INFO / CUES / ANALYTICS --- */}
       
       {/* --- NEW BENCH ANGLE BUTTON (If Applicable) --- */}
@@ -753,7 +507,7 @@ const ExerciseCard: React.FC<Props> = ({
       <div className="flex-1 overflow-y-auto space-y-4 pb-20 no-scrollbar">
           
           {/* Active Set Card */}
-          {!isPacing && completedSets.length < exercise.sets && (
+          {completedSets.length < exercise.sets && (
               <div className="bg-gym-800 p-5 rounded-2xl border border-gym-700 shadow-xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4 opacity-10">
                       {isCardio ? <Footprints size={100} /> : <Dumbbell size={100} />}
@@ -796,7 +550,7 @@ const ExerciseCard: React.FC<Props> = ({
                             type="number" 
                             value={metric2}
                             onChange={e => setMetric2(e.target.value)}
-                            placeholder={lastSession ? `${lastSession.reps}` : isCardio ? '10' : (pacerRepCount > 0 ? pacerRepCount.toString() : "-")}
+                            placeholder={lastSession ? `${lastSession.reps}` : isCardio ? '10' : (exercise.reps || "-")}
                             className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
                         />
                     </div>
@@ -817,7 +571,7 @@ const ExerciseCard: React.FC<Props> = ({
                   </div>
 
                   {/* Set Mode Toggle */}
-                  <div className="mb-6 flex items-center gap-3 relative z-10">
+                  <div className="mb-4 flex items-center gap-3 relative z-10">
                       <button 
                         onClick={toggleSetMode}
                         className={`flex-1 py-3 rounded-lg border flex items-center justify-center gap-2 text-sm font-bold transition-all ${getSetModeStyle()}`}
@@ -827,22 +581,38 @@ const ExerciseCard: React.FC<Props> = ({
                       </button>
                   </div>
 
-                  {/* Actions */}
+                  {/* AI Sensor Toggle */}
+                  {!isCardio && (
+                      <div className="flex items-center justify-between mb-6 bg-gym-900/50 p-3 rounded-lg border border-gym-700/50">
+                          <div className="flex items-center gap-2">
+                              <Smartphone size={16} className={useSensors ? "text-gym-accent" : "text-gray-500"} />
+                              <span className="text-xs font-bold text-gray-300">Use AI Motion Sensors</span>
+                          </div>
+                          <button 
+                            onClick={() => setUseSensors(!useSensors)}
+                            className={`w-10 h-6 rounded-full relative transition-colors ${useSensors ? 'bg-gym-accent' : 'bg-gym-600'}`}
+                          >
+                              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${useSensors ? 'left-5' : 'left-1'}`}></div>
+                          </button>
+                      </div>
+                  )}
+
+                  {/* MAIN ACTION BUTTON */}
                   <div className="grid grid-cols-2 gap-3 relative z-10">
                       <button 
-                        onClick={startPacer}
-                        className="py-4 bg-gym-700 hover:bg-gym-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all"
+                        onClick={() => setShowMotionTracker(true)}
+                        className="py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/40"
                       >
-                          {isCardio ? <Timer size={20} /> : <Mic size={20} />} 
-                          {isCardio ? 'Stopwatch' : 'Pacer'}
+                          <Play size={20} fill="currentColor" /> Start Set
                       </button>
+                      
                       <button 
                         onClick={handleFinishSet}
                         // For warmups, weight (metric1) is optional, so we only check metric2
                         disabled={!exercise.isWarmup ? (!metric1 && !metric2) : !metric2}
-                        className="py-4 bg-gym-accent hover:bg-blue-600 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-all"
+                        className="py-4 bg-gym-800 border border-gym-600 text-gray-300 hover:bg-gym-700 font-bold rounded-xl active:scale-95 transition-all"
                       >
-                          Log Set
+                          Log Manually
                       </button>
                   </div>
               </div>
