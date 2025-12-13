@@ -1,4 +1,5 @@
 
+
 export type MuscleGroup = 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Triceps' | 'Biceps' | 'Abs' | 'Warmup' | 'Cardio' | 'Other';
 
 export type ExerciseType = 'weighted' | 'cardio';
@@ -120,10 +121,12 @@ export interface CoachRecommendation {
 
 export interface MotionCalibration {
   exerciseId: string;
-  avgTime: number; // in ms
-  peakForce: number; // in G
-  position: 'Pocket' | 'Armband' | 'Hand';
-  calibratedAt: string; // ISO Date
+  mode: 'LINEAR' | 'ROTATIONAL';
+  axis: 'x' | 'y' | 'z' | 'alpha' | 'beta' | 'gamma';
+  minVal: number;
+  maxVal: number;
+  avgRepTime: number;
+  calibratedAt: string;
 }
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

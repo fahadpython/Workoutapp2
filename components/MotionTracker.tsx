@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Play, RefreshCw, X, Zap, AlertCircle, CheckCircle2, Smartphone, Volume2, VolumeX, Wind, Lock, BarChart3 } from 'lucide-react';
-import { MotionCalibration, Exercise, PacerConfig, PacerPhase, MuscleGroup } from '../types';
+import { X, Smartphone, RefreshCw, CheckCircle2, Zap, ArrowUp, ArrowDown } from 'lucide-react';
+import { MotionCalibration, Exercise } from '../types';
 import { saveCalibration, getCalibration } from '../services/storageService';
 
 interface Props {
@@ -13,519 +13,244 @@ interface Props {
 
 type TrackerState = 
   | 'INIT' 
-  | 'SETUP_POSITION' 
-  | 'CALIBRATION_INSTRUCTION' 
-  | 'CALIBRATING' 
-  | 'CALIBRATION_SAVED' 
-  | 'POSITION_REMINDER' 
-  | 'COUNTDOWN'
-  | 'ACTIVE' 
-  | 'FINISHED';
+  | 'PERMISSION'
+  | 'INSTRUCTION' 
+  | 'CALIB_REP_1' 
+  | 'CALIB_REP_2' 
+  | 'CALIB_REP_3' 
+  | 'ANALYZING'
+  | 'READY' 
+  | 'ACTIVE';
+
+type Axis = 'x' | 'y' | 'z' | 'alpha' | 'beta' | 'gamma';
 
 const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetReps }) => {
   const [state, setState] = useState<TrackerState>('INIT');
   const [reps, setReps] = useState(0);
-  const [feedback, setFeedback] = useState<string>("Get Ready");
-  const [debugVal, setDebugVal] = useState(0); // Live Sensor Value
-  const [maxForce, setMaxForce] = useState(0); // Peak force tracking
-  const [calibrationData, setCalibrationData] = useState<MotionCalibration | null>(null);
-  const [permissionGranted, setPermissionGranted] = useState(false);
-  const [phonePosition, setPhonePosition] = useState<'Pocket'|'Armband'|'Hand'|null>(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [feedback, setFeedback] = useState<string>("Ready");
+  const [mainMetric, setMainMetric] = useState(0);
+  
+  // Calibration
+  const [calibration, setCalibration] = useState<MotionCalibration & { direction: 1 | -1 } | null>(null);
+  const calibBuffer = useRef<{
+      x: number[], y: number[], z: number[], 
+      alpha: number[], beta: number[], gamma: number[],
+      timestamp: number[]
+  }>({ x:[], y:[], z:[], alpha:[], beta:[], gamma:[], timestamp:[] });
 
-  // --- PACER REFS ---
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
-  const [phaseTimeLeft, setPhaseTimeLeft] = useState(0);
-  const pacerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastTickRef = useRef<number>(0);
-
-  // --- SENSOR REFS ---
-  const repStartTime = useRef(0);
-  const isMoving = useRef(false);
-  const motionBuffer = useRef<number[]>([]);
-  const shakeCount = useRef(0);
+  // Active Logic
+  const [velocity, setVelocity] = useState(0);
+  const [positionPct, setPositionPct] = useState(0);
+  const repState = useRef<'START' | 'CONCENTRIC' | 'TOP' | 'ECCENTRIC'>('START');
+  const lastPositionRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const lastSpeechTime = useRef(0);
-  const lastRepTime = useRef(0);
-  const stillnessTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Constants for Physics
-  // We use Deviation from Gravity (9.8m/s). 
-  // 1.5 = Moderate movement. 5.0 = Explosive.
-  const THRESHOLD_START = 1.8; 
-  const THRESHOLD_END = 1.2;  
-  const MIN_REP_TIME = 600; // ms
-
-  // --- DERIVE OPTIMAL POSITION ---
-  const getOptimalPosition = (ex: Exercise): 'Pocket' | 'Armband' | 'Hand' => {
-      const group = ex.targetGroup;
-      const motion = ex.motionType;
-      if (group === 'Legs' || group === 'Abs') return 'Pocket';
-      if (motion === 'press' || group === 'Chest' || group === 'Shoulders') return 'Armband';
-      if (group === 'Biceps' || group === 'Triceps' || motion === 'curl') return 'Hand';
-      return 'Pocket';
-  };
-
-  const recommendedPosition = getOptimalPosition(exercise);
-
-  // --- INIT ---
   useEffect(() => {
-    if ('speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis;
-    }
-
+    if ('speechSynthesis' in window) synthRef.current = window.speechSynthesis;
     const saved = getCalibration(exercise.id);
     if (saved) {
-        setCalibrationData(saved);
-        setPhonePosition(saved.position);
-        setState('POSITION_REMINDER');
+        setCalibration({ ...saved, direction: 1 }); // Default direction
+        setState('READY');
     } else {
-        setPhonePosition(recommendedPosition);
-        setState('SETUP_POSITION');
+        setState('PERMISSION');
     }
-
-    return () => {
-      stopSensors();
-      stopPacerEngine();
-      synthRef.current?.cancel();
-      if (stillnessTimer.current) clearTimeout(stillnessTimer.current);
-    };
+    return () => { stopSensors(); };
   }, [exercise.id]);
 
-  // --- HELPER: SPEECH ---
-  const speak = (text: string, force = false, pitch = 1.1) => {
-    if (isMuted || !synthRef.current) return;
-    const now = Date.now();
-    // Allow overlapping speech only if forced (like counts)
-    if (!force && now - lastSpeechTime.current < 1500) return;
-    
-    lastSpeechTime.current = now;
-    synthRef.current.cancel(); 
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.2;
-    u.pitch = pitch;
-    synthRef.current.speak(u);
+  const speak = (text: string) => {
+      if (!synthRef.current) return;
+      synthRef.current.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.2;
+      synthRef.current.speak(u);
   };
 
-  const vibrate = (pattern: number | number[]) => {
-      if ('vibrate' in navigator) navigator.vibrate(pattern);
+  const startSensors = () => {
+      window.addEventListener('devicemotion', handleMotion);
   };
-
-  // --- SENSOR LOGIC ---
-  const requestPermission = async (nextState: () => void) => {
-    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-      try {
-        const response = await (DeviceMotionEvent as any).requestPermission();
-        if (response === 'granted') {
-          setPermissionGranted(true);
-          startSensors();
-          nextState();
-        } else {
-          setFeedback("Permission denied.");
-        }
-      } catch (e) {
-        setFeedback("Error accessing sensors.");
-      }
-    } else {
-      setPermissionGranted(true);
-      startSensors();
-      nextState();
-    }
+  const stopSensors = () => {
+      window.removeEventListener('devicemotion', handleMotion);
   };
-
-  const startSensors = () => window.addEventListener('devicemotion', handleMotion);
-  const stopSensors = () => window.removeEventListener('devicemotion', handleMotion);
 
   const handleMotion = (event: DeviceMotionEvent) => {
-    let mag = 0;
+      const now = Date.now();
+      const acc = event.accelerationIncludingGravity;
+      const rot = event.rotationRate;
+      
+      const frame = {
+          x: acc?.x || 0, y: acc?.y || 0, z: acc?.z || 0,
+          alpha: rot?.alpha || 0, beta: rot?.beta || 0, gamma: rot?.gamma || 0
+      };
 
-    // Calculate Total Force (Magnitude)
-    if (event.acceleration) {
-        const { x, y, z } = event.acceleration;
-        if (x !== null && y !== null && z !== null) {
-             mag = Math.sqrt(x*x + y*y + z*z);
-        }
-    } 
-    
-    // Fallback if linear acceleration not available (older Androids)
-    if (mag === 0 && event.accelerationIncludingGravity) {
-        const { x, y, z } = event.accelerationIncludingGravity;
-        if (x !== null && y !== null && z !== null) {
-            const total = Math.sqrt(x*x + y*y + z*z);
-            mag = Math.abs(total - 9.8); // Remove gravity approx
-        }
-    }
-
-    setDebugVal(mag); // Update UI bar
-    if (mag > maxForce) setMaxForce(mag); // Track peak for calibration UI
-
-    const now = Date.now();
-
-    if (state === 'CALIBRATING') {
-       processCalibration(mag, now);
-    } else if (state === 'ACTIVE') {
-       processActiveSet(mag, now);
-    }
+      if (state.startsWith('CALIB_REP')) {
+          calibBuffer.current.x.push(frame.x);
+          calibBuffer.current.y.push(frame.y);
+          calibBuffer.current.z.push(frame.z);
+          calibBuffer.current.alpha.push(frame.alpha);
+          calibBuffer.current.beta.push(frame.beta);
+          calibBuffer.current.gamma.push(frame.gamma);
+          calibBuffer.current.timestamp.push(now);
+      } else if (state === 'ACTIVE' && calibration) {
+          processActiveFrame(frame, now);
+      }
   };
 
-  // --- 1. CALIBRATION LOGIC ---
-  const calibStartTime = useRef(0);
-  const calibMaxForce = useRef(0);
-  
-  const handleStartCalibration = () => {
-      requestPermission(() => {
-          setState('CALIBRATION_INSTRUCTION');
-          speak(`Place phone in your ${phonePosition}.`);
+  // --- HYBRID AXIS-LOCKER ENGINE ---
+  const analyzeCalibration = () => {
+      const data = calibBuffer.current;
+      const axes: Axis[] = ['x', 'y', 'z', 'alpha', 'beta', 'gamma'];
+      let bestAxis: Axis = 'y';
+      let maxRange = 0;
+      let mode: 'LINEAR' | 'ROTATIONAL' = 'LINEAR';
+
+      // 1. Determine Mode & Axis
+      axes.forEach(axis => {
+          const values = data[axis];
+          const min = Math.min(...values);
+          const max = Math.max(...values);
+          const range = max - min;
+          
+          let score = 0;
+          if (['alpha', 'beta', 'gamma'].includes(axis)) {
+              // Rotation > 40 degrees roughly correlates to > 50-100 deg/s peaks in motion
+              score = range / 50; 
+          } else {
+              // Linear (Gravity 9.8)
+              score = range / 4; 
+          }
+
+          if (score > maxRange) {
+              maxRange = score;
+              bestAxis = axis;
+              mode = ['alpha', 'beta', 'gamma'].includes(axis) ? 'ROTATIONAL' : 'LINEAR';
+          }
       });
-  };
 
-  const beginCalibrationRep = () => {
-      setState('CALIBRATING');
-      speak("Do one rep now.");
-      isMoving.current = false;
-      calibMaxForce.current = 0;
-      setMaxForce(0);
-  };
-
-  const processCalibration = (mag: number, now: number) => {
-      // START DETECTION
-      if (!isMoving.current && mag > THRESHOLD_START) {
-          isMoving.current = true;
-          calibStartTime.current = now;
-          calibMaxForce.current = mag;
-          setFeedback("Measuring...");
+      if (maxRange < 0.5) {
+          speak("Motion too small. Try again.");
+          setState('INSTRUCTION');
+          return;
       }
 
-      // DURING REP
-      if (isMoving.current) {
-          if (mag > calibMaxForce.current) calibMaxForce.current = mag;
-          
-          // END DETECTION (Signal drops + Time passed)
-          if (mag < THRESHOLD_END) {
-             // We need a moment of silence to confirm end
-             if (!stillnessTimer.current) {
-                 stillnessTimer.current = setTimeout(() => {
-                     finishCalibration(now);
-                 }, 800); // Wait 0.8s to confirm stop
-             }
-          } else {
-              // Still moving, cancel stop timer
-              if (stillnessTimer.current) {
-                  clearTimeout(stillnessTimer.current);
-                  stillnessTimer.current = null;
+      // 2. Determine Direction (Does rep Start High or Low?)
+      // We assume the user starts calibration at the "Start" position.
+      // Average the first 10 frames vs the calculated Min/Max.
+      const axisValues = data[bestAxis];
+      const startVal = axisValues.slice(0, 10).reduce((a,b) => a+b,0) / 10;
+      const minVal = Math.min(...axisValues);
+      const maxVal = Math.max(...axisValues);
+      
+      // If start is closer to Max, then Rep goes Down (Max -> Min -> Max)
+      // If start is closer to Min, then Rep goes Up (Min -> Max -> Min)
+      // We want Normalized Position 0 to be Start, 1 to be End (Peak Contraction)
+      let direction: 1 | -1 = 1;
+      
+      const distToMin = Math.abs(startVal - minVal);
+      const distToMax = Math.abs(startVal - maxVal);
+      
+      // Standard: Start is Min (0). End is Max (1).
+      // Inverted: Start is Max (0). End is Min (1).
+      if (distToMax < distToMin) {
+          direction = -1; // Inverted
+      }
+
+      const calibData: MotionCalibration & { direction: 1 | -1 } = {
+          exerciseId: exercise.id,
+          mode,
+          axis: bestAxis,
+          minVal,
+          maxVal,
+          avgRepTime: 3000, 
+          calibratedAt: new Date().toISOString(),
+          direction
+      };
+
+      setCalibration(calibData);
+      saveCalibration(calibData);
+      setState('READY');
+      speak("Engine Locked.");
+  };
+
+  const processActiveFrame = (frame: any, now: number) => {
+      if (!calibration) return;
+
+      const raw = frame[calibration.axis];
+      const range = calibration.maxVal - calibration.minVal;
+      
+      // Normalize 0..1
+      let pct = (raw - calibration.minVal) / range;
+      
+      // Apply Direction Correction
+      if (calibration.direction === -1) {
+          pct = 1 - pct;
+      }
+      
+      // Clamp
+      pct = Math.max(0, Math.min(1, pct));
+      
+      // Smoothing
+      const smoothPct = (pct * 0.15) + (lastPositionRef.current * 0.85);
+      
+      setPositionPct(smoothPct * 100);
+      setMainMetric(smoothPct);
+      
+      // Velocity (Pct/sec)
+      const dt = (now - lastTimeRef.current) / 1000;
+      if (dt > 0) {
+          const v = (smoothPct - lastPositionRef.current) / dt;
+          setVelocity(v);
+          analyzeRep(smoothPct, v);
+      }
+      
+      lastPositionRef.current = smoothPct;
+      lastTimeRef.current = now;
+  };
+
+  const analyzeRep = (pos: number, vel: number) => {
+      // Logic Flow from Prompt
+      // 1. Start -> End (Concentric)
+      // 2. End (Squeeze)
+      // 3. End -> Start (Eccentric)
+      
+      const START_ZONE = 0.25;
+      const END_ZONE = 0.75;
+
+      switch (repState.current) {
+          case 'START':
+              if (pos > START_ZONE && vel > 0.3) {
+                  repState.current = 'CONCENTRIC';
+                  setFeedback("Drive!");
               }
-          }
-      }
-  };
-
-  const finishCalibration = (now: number) => {
-      const duration = now - calibStartTime.current - 800; // Subtract wait time
-      
-      if (duration > 500) {
-          const newData: MotionCalibration = {
-              exerciseId: exercise.id,
-              avgTime: duration,
-              peakForce: calibMaxForce.current,
-              position: phonePosition || 'Pocket',
-              calibratedAt: new Date().toISOString()
-          };
-          setCalibrationData(newData);
-          saveCalibration(newData); 
-          setState('CALIBRATION_SAVED');
-          speak("Calibration Good.");
-          isMoving.current = false;
-      } else {
-          isMoving.current = false;
-          setFeedback("Too short. Do a full rep.");
-          speak("Too short. Again.");
-      }
-      if (stillnessTimer.current) clearTimeout(stillnessTimer.current);
-  };
-
-  // --- 2. ACTIVE SET LOGIC ---
-  const processActiveSet = (mag: number, now: number) => {
-      if (!calibrationData) return;
-
-      // START REP
-      if (!isMoving.current && mag > THRESHOLD_START) {
-          // Debounce: prevent double counting too fast
-          if (now - lastRepTime.current > 400) {
-              isMoving.current = true;
-              repStartTime.current = now;
-          }
-      }
-
-      // DURING REP
-      if (isMoving.current) {
-          // END REP DETECTION
-          if (mag < THRESHOLD_END) {
-              // Less strict end detection for active workout to be responsive
-              if (now - lastRepTime.current > 400) { // Safety buffer
-                  const repDuration = now - repStartTime.current;
-                  
-                  // Minimum duration sanity check (0.5s)
-                  if (repDuration > 500) {
-                      completeRep(repDuration);
-                  }
+              break;
+          case 'CONCENTRIC':
+              // Sticking Point Logic
+              if (vel < 0.1 && pos > 0.3 && pos < 0.7) {
+                  setFeedback("PUSH HARDER!");
               }
-          } else {
-              // Keep updating timestamp while moving
-              lastRepTime.current = now; 
-          }
-      }
-  };
-
-  const completeRep = (duration: number) => {
-      isMoving.current = false;
-      const newCount = reps + 1;
-      setReps(newCount);
-      onRepCount(newCount);
-      
-      // SYNC PACER: Reset visual loop to 0 to match user's rhythm
-      resetPacerEngine();
-
-      // SMART COACH VOICE
-      const remaining = targetReps - newCount;
-      
-      if (remaining === 0) {
-          speak("Set Complete!", true);
-          setFeedback("DONE!");
-      } else if (remaining <= 3 && remaining > 0) {
-          if (remaining === 1) speak("Last one!", true);
-          else speak(`${remaining} more`, true);
-      } else {
-          // Just count the number
-          speak(newCount.toString(), true);
-      }
-
-      // ANALYZE TEMPO
-      const targetTime = calibrationData?.avgTime || 2000;
-      const ratio = duration / targetTime;
-      
-      if (ratio < 0.6) {
-          setFeedback("Too Fast!");
-          vibrate([50, 50, 50]);
-      } else if (ratio > 1.5) {
-          setFeedback("Grinding...");
-      } else {
-          setFeedback("Good Tempo");
-      }
-  };
-
-  const handleStartSet = () => {
-      if (!permissionGranted) {
-          requestPermission(() => startCountdown());
-      } else {
-          startCountdown();
-      }
-  };
-
-  const startCountdown = () => {
-      setState('COUNTDOWN');
-      let count = 3;
-      speak(`Target: ${targetReps} reps. Starting in 3`);
-      const interval = setInterval(() => {
-          count--;
-          if (count > 0) speak(count.toString());
-          else {
-              clearInterval(interval);
-              setState('ACTIVE');
-              speak("Go!");
-              startPacerEngine(); 
-          }
-      }, 1000);
-  };
-
-  // --- VISUAL PACER ENGINE ---
-  const resetPacerEngine = () => {
-      // Syncs the visual animation to the start of the cycle
-      startPacerEngine();
-  };
-
-  const runPhase = (phaseIdx: number) => {
-      if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-
-      const phases = exercise.pacer.phases;
-      if (!phases || phases.length === 0) return;
-
-      const currentPhase = phases[phaseIdx];
-      setCurrentPhaseIndex(phaseIdx);
-      
-      const durationMs = currentPhase.duration * 1000;
-      const startTime = Date.now();
-      
-      setPhaseTimeLeft(currentPhase.duration);
-
-      // Simple Haptics for phase change
-      if (currentPhase.action === 'EXPLODE' || currentPhase.action === 'DRIVE') vibrate(50);
-
-      pacerTimerRef.current = setInterval(() => {
-          const now = Date.now();
-          const elapsed = now - startTime;
-          const remainingMs = Math.max(0, durationMs - elapsed);
-          
-          setPhaseTimeLeft(remainingMs / 1000);
-
-          if (remainingMs <= 0) {
-              if(pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-              const nextPhaseIdx = phaseIdx + 1;
-              // Loop or Stop? In AI mode, we ideally loop, but relying on resetPacerEngine for hard sync
-              if (nextPhaseIdx < phases.length) runPhase(nextPhaseIdx);
-              else runPhase(0); 
-          }
-      }, 33);
-  };
-
-  const startPacerEngine = () => {
-      if (exercise.pacer.phases.length > 0) runPhase(0);
-  };
-
-  const stopPacerEngine = () => {
-      if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
-  };
-
-  const activePhase: PacerPhase = exercise.pacer.phases[currentPhaseIndex] || { 
-      action: 'READY', breathing: 'Hold', duration: 1, voiceCue: ''
-  };
-
-  const getPhaseColor = (phase: PacerPhase) => {
-      switch (phase.breathing) {
-          case 'Exhale': return 'text-gym-success'; 
-          case 'Inhale': return 'text-blue-400'; 
-          default: return 'text-yellow-400'; 
-      }
-  };
-
-  // --- RENDER ---
-  const renderContent = () => {
-      switch (state) {
-          case 'INIT':
-              return <div className="text-white">Initializing Sensors...</div>;
-          
-          case 'SETUP_POSITION':
-              return (
-                  <div className="max-w-xs text-center animate-in zoom-in">
-                      <Smartphone size={48} className="mx-auto text-gym-accent mb-4" />
-                      <h2 className="text-2xl font-bold text-white mb-2">Required Placement</h2>
-                      <div className="bg-gym-800 p-4 rounded-xl border border-gym-accent mb-6">
-                          <p className="text-xl font-bold text-white uppercase tracking-wider">{phonePosition}</p>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-6">Put phone in {phonePosition} for accuracy.</p>
-                      <button onClick={handleStartCalibration} className="w-full py-4 bg-white text-gym-900 font-bold rounded-xl">Next</button>
-                  </div>
-              );
-
-          case 'CALIBRATION_INSTRUCTION':
-              return (
-                  <div className="max-w-xs text-center animate-in zoom-in">
-                      <RefreshCw size={48} className="mx-auto text-yellow-500 mb-4" />
-                      <h2 className="text-2xl font-bold text-white mb-2">Calibration</h2>
-                      <p className="text-gray-300 mb-6">Perform <b>1 FULL REP</b> then STOP moving.</p>
-                      <button onClick={beginCalibrationRep} className="w-full py-4 bg-yellow-500 text-gym-900 font-bold rounded-xl">Start Calibration</button>
-                  </div>
-              );
-
-          case 'CALIBRATING':
-              return (
-                  <div className="text-center animate-in zoom-in w-full max-w-xs">
-                      <h2 className="text-4xl font-black text-white mb-4">DO 1 REP</h2>
-                      
-                      {/* Live Sensor Feedback Bar */}
-                      <div className="w-full h-12 bg-gym-800 rounded-lg overflow-hidden mx-auto mb-2 border border-gym-700 relative">
-                          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 z-10 font-mono">
-                              FORCE SENSOR
-                          </div>
-                          {/* Live Bar */}
-                          <div 
-                            className="h-full bg-yellow-500 transition-all duration-75 ease-out opacity-50" 
-                            style={{width: `${Math.min(100, (debugVal/5)*100)}%`}}
-                          ></div>
-                          {/* Peak Marker */}
-                          <div 
-                             className="absolute top-0 bottom-0 w-1 bg-white" 
-                             style={{left: `${Math.min(100, (maxForce/5)*100)}%`}}
-                          ></div>
-                      </div>
-                      
-                      <p className="text-gym-accent font-bold animate-pulse mb-8">{feedback}</p>
-                      
-                      <button onClick={() => finishCalibration(Date.now() + 1000)} className="text-xs text-gray-500 underline mt-4">Manual Finish (If Stuck)</button>
-                  </div>
-              );
-
-          case 'CALIBRATION_SAVED':
-              return (
-                  <div className="text-center animate-in zoom-in">
-                      <CheckCircle2 size={64} className="mx-auto text-green-500 mb-4" />
-                      <h2 className="text-2xl font-bold text-white mb-2">Saved!</h2>
-                      <p className="text-gray-400 mb-6">Sensor Calibrated.</p>
-                      <button onClick={() => setState('POSITION_REMINDER')} className="px-8 py-3 bg-white text-gym-900 font-bold rounded-full">Continue</button>
-                  </div>
-              );
-
-          case 'POSITION_REMINDER':
-              return (
-                  <div className="max-w-xs text-center animate-in zoom-in">
-                      <div className="bg-gym-800 p-6 rounded-2xl border border-gym-700 mb-6 relative">
-                          <p className="text-gray-500 text-xs uppercase font-bold mb-1">Check Position</p>
-                          <h3 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-                              {phonePosition} <Lock size={16} className="text-gym-success"/>
-                          </h3>
-                      </div>
-                      <button onClick={handleStartSet} className="w-full py-4 bg-gym-accent text-white font-bold rounded-xl shadow-lg shadow-blue-900/50">Start Set</button>
-                  </div>
-              );
-
-          case 'COUNTDOWN':
-              return <div className="text-center"><div className="text-8xl font-black text-white animate-pulse">...</div></div>;
-
-          case 'ACTIVE':
-              return (
-                  <div className="w-full flex flex-col items-center justify-between h-full py-8">
-                      <div className="w-full flex justify-between items-start px-6">
-                          <div>
-                              <p className="text-gray-500 text-xs uppercase font-bold">Reps</p>
-                              <h2 className="text-7xl font-black text-white leading-none">{reps}</h2>
-                              <p className="text-gray-400 text-sm mt-1">Target: {targetReps}</p>
-                          </div>
-                          <div className="text-right">
-                              <p className="text-gray-500 text-xs uppercase font-bold">AI Coach</p>
-                              <div className={`text-xl font-bold ${feedback.includes('Fast') ? 'text-red-500' : 'text-green-400'}`}>{feedback}</div>
-                              {/* Small Debug Bar for Active Mode */}
-                              <div className="w-24 h-1 bg-gym-700 mt-2 ml-auto rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-500" style={{width: `${Math.min(100, (debugVal/4)*100)}%`}}></div>
-                              </div>
-                          </div>
-                      </div>
-
-                      {/* Synced Visual Pacer */}
-                      {!exercise.isWarmup && exercise.pacer.phases.length > 0 && (
-                          <div className="relative">
-                              <div className={`w-64 h-64 rounded-full border-8 flex flex-col items-center justify-center transition-all duration-300 ease-linear
-                                  ${activePhase.breathing === 'Exhale' ? 'border-gym-success bg-gym-success/10 scale-110' : 
-                                  activePhase.breathing === 'Inhale' ? 'border-blue-500 bg-blue-500/10 scale-90' : 
-                                  'border-yellow-500 bg-yellow-500/10 scale-100'
-                                  }
-                              `}>
-                                  <p className={`text-4xl font-black uppercase italic tracking-tighter ${getPhaseColor(activePhase)}`}>
-                                      {activePhase.action}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-2">
-                                      <Wind size={20} className={getPhaseColor(activePhase)} />
-                                      <span className="text-xl font-bold text-white">{activePhase.breathing}</span>
-                                  </div>
-                              </div>
-                              <div className="w-48 bg-gym-800 rounded-full h-2 mt-8 mx-auto overflow-hidden">
-                                  <div className={`h-full ${activePhase.breathing === 'Exhale' ? 'bg-gym-success' : 'bg-blue-500'}`} style={{ width: `${(phaseTimeLeft / activePhase.duration) * 100}%` }}></div>
-                              </div>
-                          </div>
-                      )}
-
-                      <button onClick={onClose} className="bg-red-500/20 text-red-500 border border-red-500/50 px-10 py-4 rounded-full font-bold flex items-center gap-2"><X size={20} /> Finish Set</button>
-                  </div>
-              );
-          
-          default: return null;
+              if (pos > END_ZONE) {
+                  repState.current = 'TOP';
+                  setFeedback("Squeeze");
+              }
+              break;
+          case 'TOP':
+              if (pos < END_ZONE && vel < -0.2) {
+                  repState.current = 'ECCENTRIC';
+                  setFeedback("Control Down");
+              }
+              break;
+          case 'ECCENTRIC':
+              if (vel < -1.5) setFeedback("Too Fast!");
+              
+              if (pos < START_ZONE) {
+                  setReps(r => r + 1);
+                  onRepCount(reps + 1);
+                  speak((reps + 1).toString());
+                  repState.current = 'START';
+                  setFeedback("Rep Complete");
+              }
+              break;
       }
   };
 
@@ -533,15 +258,63 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     <div className="fixed inset-0 z-[60] bg-gym-900/98 backdrop-blur flex flex-col animate-in fade-in">
         <div className="p-4 flex justify-between items-center border-b border-gym-700">
             <h3 className="font-bold text-white">{exercise.name}</h3>
-            <div className="flex gap-4">
-                <button onClick={() => setIsMuted(!isMuted)} className="text-gray-400">
-                    {isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}
-                </button>
-                <button onClick={onClose} className="p-2 bg-gym-800 rounded-full text-white"><X size={20}/></button>
-            </div>
+            <button onClick={() => { stopSensors(); onClose(); }} className="p-2 bg-gym-800 rounded-full text-white"><X size={20}/></button>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-4">
-            {renderContent()}
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            {state === 'PERMISSION' && (
+                <div className="max-w-xs">
+                    <Smartphone size={64} className="mx-auto text-gym-accent mb-6" />
+                    <h2 className="text-2xl font-bold text-white mb-4">Sensor Access</h2>
+                    <button onClick={() => { startSensors(); setState('INSTRUCTION'); }} className="w-full py-4 bg-gym-accent text-white font-bold rounded-xl">Allow Access</button>
+                </div>
+            )}
+
+            {state === 'INSTRUCTION' && (
+                <div className="max-w-xs">
+                    <RefreshCw size={64} className="mx-auto text-yellow-500 mb-6" />
+                    <h2 className="text-2xl font-bold text-white mb-2">Calibration</h2>
+                    <p className="text-gray-300 mb-8">Do 3 full reps to teach the AI your range of motion.</p>
+                    <button onClick={() => { startSensors(); setState('CALIB_REP_1'); speak("Start Rep 1"); }} className="w-full py-4 bg-yellow-500 text-gym-900 font-bold rounded-xl">Start Calibration</button>
+                </div>
+            )}
+
+            {state.startsWith('CALIB') && (
+                <div className="w-full h-full flex flex-col items-center justify-center" onClick={() => {
+                    if (state === 'CALIB_REP_1') { setState('CALIB_REP_2'); speak("Rep 2"); }
+                    else if (state === 'CALIB_REP_2') { setState('CALIB_REP_3'); speak("Rep 3"); }
+                    else if (state === 'CALIB_REP_3') { analyzeCalibration(); }
+                }}>
+                    <h2 className="text-6xl font-black text-white mb-4">{state.replace('CALIB_', '').replace('_', ' ')}</h2>
+                    <div className="w-32 h-32 rounded-full border-4 border-white/20 animate-ping"></div>
+                    <p className="mt-12 text-gray-500">Tap after completing rep</p>
+                </div>
+            )}
+
+            {state === 'READY' && (
+                <div className="max-w-xs animate-in zoom-in">
+                    <CheckCircle2 size={64} className="mx-auto text-green-500 mb-4" />
+                    <h2 className="text-2xl font-bold text-white mb-2">Engine Locked</h2>
+                    <p className="text-gray-400 mb-6 text-sm">Mode: {calibration?.mode} | Axis: {calibration?.axis}</p>
+                    <button onClick={() => { setState('ACTIVE'); speak("Go"); }} className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg">Start Set</button>
+                    <button onClick={() => setState('INSTRUCTION')} className="mt-4 text-gray-500 text-sm">Recalibrate</button>
+                </div>
+            )}
+
+            {state === 'ACTIVE' && (
+                <div className="w-full flex flex-col items-center">
+                     <div className="w-64 h-64 relative rounded-full border-8 border-gym-700 flex items-center justify-center bg-gym-900 shadow-inner">
+                         <div className="absolute inset-0 rounded-full bg-gym-accent opacity-20 transition-all duration-75" style={{ transform: `scale(${0.2 + (mainMetric * 0.8)})` }}></div>
+                         <div className="z-10 text-center">
+                             <h2 className="text-8xl font-black text-white">{reps}</h2>
+                             <p className="text-gray-400 font-bold uppercase tracking-wider text-sm mt-2">{feedback}</p>
+                         </div>
+                         {velocity > 0.5 && <ArrowUp className="absolute top-4 text-green-500 animate-bounce" size={32} />}
+                         {velocity < -0.5 && <ArrowDown className="absolute bottom-4 text-blue-500 animate-bounce" size={32} />}
+                     </div>
+                     <button onClick={onClose} className="mt-8 px-8 py-3 bg-red-500/20 text-red-500 border border-red-500/50 rounded-full font-bold">Stop</button>
+                </div>
+            )}
         </div>
     </div>
   );
