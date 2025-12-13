@@ -2,11 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
 import { SessionData, UserStats, DAYS_OF_WEEK, Exercise } from './types';
-import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories } from './services/storageService';
+import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, ReceiptData } from './services/storageService';
 import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
 import StatsView from './components/StatsView';
+import BodyHeatmap from './components/BodyHeatmap';
+import WorkoutReceipt from './components/WorkoutReceipt';
 import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -27,6 +29,7 @@ const App: React.FC = () => {
   const [showWorkoutSelector, setShowWorkoutSelector] = useState(false);
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
   const [weeklyCalories, setWeeklyCalories] = useState(0);
+  const [heatmapData, setHeatmapData] = useState<Record<string, number>>({});
 
   // Session Timer State
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -36,6 +39,7 @@ const App: React.FC = () => {
     const stats = getDashboardStats();
     setBestLift(stats.bestLift);
     setWeeklyCalories(stats.totalCalories);
+    setHeatmapData(getMuscleHeatmapData());
   }, []);
 
   // Save session whenever it changes
@@ -221,6 +225,7 @@ const App: React.FC = () => {
     const stats = getDashboardStats();
     setBestLift(stats.bestLift);
     setWeeklyCalories(stats.totalCalories);
+    setHeatmapData(getMuscleHeatmapData());
   };
 
   const cancelTimer = () => {
@@ -311,41 +316,12 @@ const App: React.FC = () => {
   // --- RENDER: WORKOUT ACTIVE ---
   if (view === 'WORKOUT' && currentSession) {
     if (currentSession.isFinished) {
-      // SUMMARY VIEW
+      // SUMMARY VIEW (RECEIPT)
       return (
-        <div className="min-h-screen bg-gym-900 flex items-center justify-center p-6 max-w-md mx-auto">
-          <div className="text-center w-full animate-in zoom-in-95 duration-300">
-            <Trophy className="w-24 h-24 text-yellow-500 mx-auto mb-6 animate-bounce" />
-            <h1 className="text-4xl font-bold text-white mb-2">WORKOUT CRUSHED</h1>
-            <p className="text-gray-400 mb-8">Good work today. Recovery starts now.</p>
-            
-            <div className="bg-gym-800 rounded-xl p-6 mb-6 text-left border border-gym-700 shadow-xl">
-               <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                  <Battery size={20} className="text-gym-success" /> 
-                  Post-Workout Checklist
-               </h3>
-               <ul className="space-y-4 text-sm text-gray-300">
-                  <li className="flex items-center gap-4 cursor-pointer" onClick={toggleCreatine}>
-                     <div className={`w-6 h-6 rounded-md border flex items-center justify-center transition-colors ${userStats.creatineTaken ? 'bg-gym-success border-gym-success' : 'border-gray-500'}`}>
-                        {userStats.creatineTaken && <Settings size={14} className="text-white" />} 
-                     </div>
-                     <span>Take 3g Creatine</span>
-                  </li>
-                  <li className="flex items-center gap-4">
-                     <Droplets size={24} className="text-blue-400" />
-                     <span>Drink Water (Rehydrate)</span>
-                  </li>
-               </ul>
-            </div>
-
-            <button 
-              onClick={handleCompleteWorkoutSummary}
-              className="w-full py-4 bg-white text-gym-900 font-bold rounded-lg uppercase tracking-wider hover:bg-gray-100 shadow-lg"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
+          <WorkoutReceipt 
+             data={getSessionSummary(currentSession)} 
+             onClose={handleCompleteWorkoutSummary} 
+          />
       );
     }
 
@@ -505,6 +481,11 @@ const App: React.FC = () => {
               <p className="text-lg font-black text-orange-400 italic">{weeklyCalories} kcal</p>
            </div>
         </div>
+      </div>
+
+      {/* BODY HEATMAP (Visual Recovery) */}
+      <div className="mb-6 animate-in fade-in slide-in-from-bottom-2">
+          <BodyHeatmap recoveryStatus={heatmapData} />
       </div>
 
       {/* Main Workout Card */}

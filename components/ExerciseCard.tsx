@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -226,7 +226,7 @@ const ExerciseCard: React.FC<Props> = ({
   const [plateauAlert, setPlateauAlert] = useState<string | null>(null);
   const [showLeveler, setShowLeveler] = useState(false);
   const [showMotionTracker, setShowMotionTracker] = useState(false);
-  const [useSensors, setUseSensors] = useState(true);
+  const [bestHistorical1RM, setBestHistorical1RM] = useState(0);
 
   const isCardio = exercise.type === 'cardio';
 
@@ -245,7 +245,18 @@ const ExerciseCard: React.FC<Props> = ({
     if (pCheck.isStalled) {
         setPlateauAlert(pCheck.recommendation);
     }
-  }, [exercise.id, completedSets.length]);
+
+    // 1RM Projector: Calculate Historical Best
+    if (hist && hist.logs.length > 0 && !isCardio) {
+        let max = 0;
+        hist.logs.forEach(log => {
+            // Epley Formula: w * (1 + r/30)
+            const oneRM = log.weight * (1 + (log.reps / 30));
+            if (oneRM > max) max = oneRM;
+        });
+        setBestHistorical1RM(max);
+    }
+  }, [exercise.id, completedSets.length, isCardio]);
 
   useEffect(() => {
     const m1 = parseFloat(metric1) || 0;
@@ -353,6 +364,15 @@ const ExerciseCard: React.FC<Props> = ({
                            'border-gym-600';
 
   const totalBurned = completedSets.reduce((acc, s) => acc + (s.calories || 0), 0);
+  
+  // --- 1RM CALCULATIONS ---
+  const currentWeight = parseFloat(metric1) || 0;
+  const currentReps = parseFloat(metric2) || 0;
+  const projected1RM = (!exercise.isWarmup && !isCardio && currentWeight > 0 && currentReps > 0)
+     ? Math.round(currentWeight * (1 + (currentReps / 30)))
+     : 0;
+  
+  const isBreakingRecord = bestHistorical1RM > 0 && projected1RM > bestHistorical1RM;
   
   return (
     <div className="flex flex-col h-full animate-in slide-in-from-right duration-300 relative">
@@ -532,33 +552,53 @@ const ExerciseCard: React.FC<Props> = ({
 
                   {/* INPUTS: HIDDEN IF WARMUP */}
                   {!exercise.isWarmup ? (
-                      <div className="flex gap-4 mb-4 relative z-10">
-                        <div className="w-1/2">
-                            <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
-                                {isCardio ? 'Distance (km)' : 'Weight (kg)'}
-                            </label>
-                            <input 
-                                type="number" 
-                                step={isCardio ? "0.1" : "1"}
-                                value={metric1}
-                                onChange={e => setMetric1(e.target.value)}
-                                placeholder={lastSession ? `${lastSession.weight}` : recommendation?.targetWeight ? `${recommendation.targetWeight}` : '-'}
-                                className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
-                            />
+                      <>
+                        <div className="flex gap-4 mb-4 relative z-10">
+                          <div className="w-1/2">
+                              <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
+                                  {isCardio ? 'Distance (km)' : 'Weight (kg)'}
+                              </label>
+                              <input 
+                                  type="number" 
+                                  step={isCardio ? "0.1" : "1"}
+                                  value={metric1}
+                                  onChange={e => setMetric1(e.target.value)}
+                                  placeholder={lastSession ? `${lastSession.weight}` : recommendation?.targetWeight ? `${recommendation.targetWeight}` : '-'}
+                                  className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
+                              />
+                          </div>
+                          <div className="w-1/2">
+                              <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
+                                  {isCardio ? 'Time (mins)' : 'Reps'}
+                              </label>
+                              <input 
+                                  type="number" 
+                                  value={metric2}
+                                  onChange={e => setMetric2(e.target.value)}
+                                  placeholder={lastSession ? `${lastSession.reps}` : isCardio ? '10' : (exercise.reps || "-")}
+                                  className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
+                              />
+                          </div>
                         </div>
-                        <div className="w-1/2">
-                            <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
-                                {isCardio ? 'Time (mins)' : 'Reps'}
-                            </label>
-                            <input 
-                                type="number" 
-                                value={metric2}
-                                onChange={e => setMetric2(e.target.value)}
-                                placeholder={lastSession ? `${lastSession.reps}` : isCardio ? '10' : (exercise.reps || "-")}
-                                className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
-                            />
-                        </div>
-                      </div>
+
+                        {/* 1RM PROJECTOR */}
+                        {!isCardio && (
+                            <div className={`mb-6 relative z-10 p-2 rounded-lg border transition-all duration-300 flex items-center justify-center gap-3 ${isBreakingRecord ? 'bg-gym-accent/20 border-gym-accent shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'bg-gym-900/50 border-gym-700/50'}`}>
+                                <Crown size={18} className={isBreakingRecord ? 'text-yellow-400 animate-bounce' : 'text-gray-600'} />
+                                <div className="text-center">
+                                    <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                                        {projected1RM > 0 ? 'Theoretical 1 Rep Max' : 'Current Record 1RM'}
+                                    </p>
+                                    <p className={`text-lg font-black ${isBreakingRecord ? 'text-white' : 'text-gray-300'}`}>
+                                        {projected1RM > 0 ? projected1RM : (bestHistorical1RM > 0 ? bestHistorical1RM : '--')} <span className="text-xs text-gray-500 font-normal">kg</span>
+                                    </p>
+                                </div>
+                                {isBreakingRecord && (
+                                    <TrendingUp size={18} className="text-green-400" />
+                                )}
+                            </div>
+                        )}
+                      </>
                   ) : (
                       // WARMUP SIMPLIFIED DISPLAY
                       <div className="mb-6 relative z-10 text-center py-4 bg-gym-900/50 rounded-xl border border-gym-700/50">
@@ -590,22 +630,6 @@ const ExerciseCard: React.FC<Props> = ({
                           >
                               <Layers size={18} />
                               {getSetModeText()}
-                          </button>
-                      </div>
-                  )}
-
-                  {/* AI Sensor Toggle */}
-                  {!isCardio && !exercise.isWarmup && (
-                      <div className="flex items-center justify-between mb-6 bg-gym-900/50 p-3 rounded-lg border border-gym-700/50">
-                          <div className="flex items-center gap-2">
-                              <Smartphone size={16} className={useSensors ? "text-gym-accent" : "text-gray-500"} />
-                              <span className="text-xs font-bold text-gray-300">Use AI Motion Sensors</span>
-                          </div>
-                          <button 
-                            onClick={() => setUseSensors(!useSensors)}
-                            className={`w-10 h-6 rounded-full relative transition-colors ${useSensors ? 'bg-gym-accent' : 'bg-gym-600'}`}
-                          >
-                              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${useSensors ? 'left-5' : 'left-1'}`}></div>
                           </button>
                       </div>
                   )}

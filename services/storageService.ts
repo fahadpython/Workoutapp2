@@ -238,9 +238,11 @@ export const getDashboardStats = (): DashboardStats => {
     let exerciseDef = ALL_EXERCISES.find(e => e.id === exerciseId);
     
     if (!exerciseDef) {
+       // Try custom if not in standard
+       // Note: In a real app we'd load custom defs from storage too, but for summary this is ok
        exerciseDef = { 
          id: exerciseId, 
-         name: 'Custom Exercise', 
+         name: 'Exercise', 
          type: 'weighted', 
          sets: 3, reps: '10', 
          restSeconds: 60, cues: '', muscleFocus: 'Custom', targetGroup: 'Other', feeling: '', 
@@ -289,6 +291,65 @@ export const getDashboardStats = (): DashboardStats => {
     bestLift,
     totalCalories: Math.round(totalCalories)
   };
+};
+
+// --- HEATMAP ENGINE ---
+
+const mapMuscleToKey = (detailedName: string): string => {
+    const n = detailedName.toLowerCase();
+    if (n.includes('chest')) return 'chest';
+    if (n.includes('lat') || n.includes('back')) return 'back';
+    if (n.includes('shoulder') || n.includes('delt')) return 'shoulders';
+    if (n.includes('tricep')) return 'triceps';
+    if (n.includes('bicep') || n.includes('brach')) return 'biceps';
+    if (n.includes('abs') || n.includes('core') || n.includes('oblique')) return 'abs';
+    if (n.includes('quad') || n.includes('thigh')) return 'quads';
+    if (n.includes('ham') || n.includes('glute')) return 'hams_glutes';
+    if (n.includes('calf') || n.includes('soleus')) return 'calves';
+    return '';
+};
+
+export const getMuscleHeatmapData = (): Record<string, number> => {
+    const historyRaw = localStorage.getItem(KEYS.HISTORY);
+    const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
+    
+    const lastTrainedHours: Record<string, number> = {
+        chest: Infinity, back: Infinity, shoulders: Infinity,
+        triceps: Infinity, biceps: Infinity, abs: Infinity,
+        quads: Infinity, hams_glutes: Infinity, calves: Infinity
+    };
+    
+    const today = new Date();
+    today.setHours(0,0,0,0); // Midnight comparison for day granularity
+
+    Object.keys(fullHistory).forEach(exId => {
+        const logs = fullHistory[exId] as HistoryLog[];
+        if (logs.length === 0) return;
+        
+        const exDef = ALL_EXERCISES.find(e => e.id === exId);
+        if (!exDef || !exDef.muscleSplit) return;
+        
+        // Sort logs desc
+        const sortedLogs = logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const lastLogDateStr = sortedLogs[0].date;
+        const lastLogDate = new Date(lastLogDateStr);
+        lastLogDate.setHours(0,0,0,0);
+        
+        const diffDays = (today.getTime() - lastLogDate.getTime()) / (1000 * 60 * 60 * 24);
+        const diffHours = diffDays * 24; // Approximation is fine, we care about <24, 24-48, etc.
+        
+        // Update muscles hit by this exercise
+        Object.keys(exDef.muscleSplit).forEach(mName => {
+            if ((exDef.muscleSplit![mName] || 0) > 30) { // Only count if muscle involvement > 30%
+                const key = mapMuscleToKey(mName);
+                if (key && diffHours < lastTrainedHours[key]) {
+                    lastTrainedHours[key] = diffHours;
+                }
+            }
+        });
+    });
+    
+    return lastTrainedHours;
 };
 
 export const getCreatineStats = (history: string[]) => {
@@ -366,4 +427,111 @@ export const analyzeSetPerformance = (exercise: Exercise, weight: number, reps: 
   if (reps < min - 2) return "Too heavy. Drop weight by 10% next set.";
   if (reps >= min && reps <= max) return "Perfect weight. Keep grinding.";
   return "Good set. Adjust if needed.";
+};
+
+// --- RECEIPT & PR GENERATOR ---
+
+export interface ReceiptData {
+    duration: string;
+    totalVolume: number;
+    exercises: {
+        name: string;
+        sets: number;
+        bestWeight: number;
+        isPR: boolean;
+        isCardio: boolean;
+    }[];
+    date: string;
+    quote: string;
+}
+
+const MOTIVATIONAL_QUOTES = [
+    "PAIN IS TEMPORARY.",
+    "LIGHT WEIGHT BABY!",
+    "BUILD THE MONUMENT.",
+    "DISCIPLINE > MOTIVATION",
+    "THE IRON NEVER LIES.",
+    "EARNED. NOT GIVEN.",
+    "ONE MORE REP.",
+    "SACRIFICE FOR GLORY.",
+    "CONQUER YOURSELF.",
+    "NO SHORTCUTS."
+];
+
+export const getSessionSummary = (session: SessionData): ReceiptData => {
+    const historyRaw = localStorage.getItem(KEYS.HISTORY);
+    const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
+    
+    // Calculate Duration
+    const durationMs = Date.now() - session.startTime;
+    const minutes = Math.floor(durationMs / 60000);
+    const durationStr = `${Math.floor(minutes/60)}h ${minutes%60}m`;
+    
+    let totalVolume = 0;
+    const exerciseSummaries = [];
+    const today = getTodayString();
+    
+    // Process Exercises
+    for (const exId of Object.keys(session.completedExercises)) {
+        const sets = session.completedExercises[exId];
+        if (sets.length === 0) continue;
+        
+        // Find Exercise Name
+        let name = "Unknown Exercise";
+        let isCardio = false;
+        
+        // Check standard
+        let exDef = ALL_EXERCISES.find(e => e.id === exId);
+        // Check custom
+        if (!exDef) exDef = session.customExercises.find(e => e.id === exId);
+        
+        if (exDef) {
+            name = exDef.name;
+            isCardio = exDef.type === 'cardio';
+        }
+
+        // Calculate Session Best & Volume
+        let sessionBestWeight = 0;
+        
+        sets.forEach(s => {
+            if (!isCardio) {
+                totalVolume += s.weight * s.reps;
+                if (s.weight > sessionBestWeight) sessionBestWeight = s.weight;
+            } else {
+                 // Cardio volume is distance
+                 totalVolume += s.weight; 
+                 if (s.weight > sessionBestWeight) sessionBestWeight = s.weight;
+            }
+        });
+        
+        // Check for PR (History vs Session)
+        // We look at ALL history for this exercise, excluding TODAY's logs that were just saved
+        // actually, simpler: find max weight in history BEFORE today.
+        const logs = fullHistory[exId] as HistoryLog[] || [];
+        const previousLogs = logs.filter(l => l.date !== today);
+        
+        let previousMax = 0;
+        previousLogs.forEach(l => {
+            if (l.weight > previousMax) previousMax = l.weight;
+        });
+        
+        // If session best > previous max, it is a TRUE PR.
+        const isPR = sessionBestWeight > previousMax && previousMax > 0;
+        
+        exerciseSummaries.push({
+            name,
+            sets: sets.length,
+            bestWeight: sessionBestWeight,
+            isPR,
+            isCardio
+        });
+    }
+    
+    return {
+        duration: durationStr,
+        totalVolume: Math.round(totalVolume),
+        exercises: exerciseSummaries,
+        date: new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(),
+        quote: MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]
+    };
 };
