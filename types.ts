@@ -40,6 +40,7 @@ export interface Exercise {
   isCompound?: boolean; // For algorithmic weight jumps
   alternatives?: Exercise[]; // Swappable exercises
   swapLabel?: string; // Reason for swap (e.g. "Better Isolation")
+  benchAngle?: number; // Optional: Required bench angle in degrees
 }
 
 export interface WorkoutDay {

@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler } from 'lucide-react';
 import StickFigure from './StickFigure';
+import BenchLeveler from './BenchLeveler';
 
 interface Props {
   exercise: Exercise;
@@ -221,6 +223,7 @@ const ExerciseCard: React.FC<Props> = ({
   const [coachFeedback, setCoachFeedback] = useState<string | null>(null);
   const [showMonsterPrompt, setShowMonsterPrompt] = useState(false);
   const [plateauAlert, setPlateauAlert] = useState<string | null>(null);
+  const [showLeveler, setShowLeveler] = useState(false);
 
   // --- PACER ENGINE STATE ---
   const [isPacing, setIsPacing] = useState(false);
@@ -554,6 +557,14 @@ const ExerciseCard: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* --- LEVELER MODAL --- */}
+      {showLeveler && exercise.benchAngle !== undefined && (
+          <BenchLeveler 
+            targetAngle={exercise.benchAngle} 
+            onClose={() => setShowLeveler(false)} 
+          />
+      )}
+
       {/* --- PLATEAU ALERT --- */}
       {plateauAlert && (
           <div className="mb-4 bg-red-900/30 border border-red-500/50 p-3 rounded-lg flex items-start gap-3 animate-in slide-in-from-top-2">
@@ -685,9 +696,20 @@ const ExerciseCard: React.FC<Props> = ({
       )}
 
       {/* --- INFO / CUES / ANALYTICS --- */}
+      
+      {/* --- NEW BENCH ANGLE BUTTON (If Applicable) --- */}
+      {exercise.benchAngle !== undefined && (
+          <button 
+            onClick={() => setShowLeveler(true)}
+            className="mb-4 w-full py-3 bg-gym-800 border border-gym-700 text-gym-accent font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform"
+          >
+             <Ruler size={18} /> Calibrate Bench ({exercise.benchAngle}°)
+          </button>
+      )}
+
       <button 
         onClick={() => setShowInfo(!showInfo)}
-        className="mb-4 flex items-center justify-between bg-gym-800/50 p-3 rounded-lg border border-gym-700 text-sm text-gray-300"
+        className="mb-4 w-full flex items-center justify-between bg-gym-800/50 p-3 rounded-lg border border-gym-700 text-sm text-gray-300"
       >
         <span className="flex items-center gap-2"><Info size={16}/> Tech & Form</span>
         {showInfo ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}

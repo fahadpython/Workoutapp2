@@ -103,7 +103,8 @@ export const PUSH_A_DAY: WorkoutDay = {
       visualize: 'Arch back slightly. Lower weights slowly until they touch your outer chest. Pause 1 sec.',
       action: 'Drive up, but stop 1 inch before dumbbells touch at the top. Keep tension on the chest.',
       muscleFocus: 'Upper Chest', targetGroup: 'Chest', feeling: 'Deep stretch across upper pecs.', 
-      pacer: PACER_PUSH, metValue: 6.0, muscleSplit: { 'Upper Chest': 80, 'Front Delts': 15, 'Triceps': 5 }, motionType: 'press', isCompound: true 
+      pacer: PACER_PUSH, metValue: 6.0, muscleSplit: { 'Upper Chest': 80, 'Front Delts': 15, 'Triceps': 5 }, motionType: 'press', isCompound: true,
+      benchAngle: 30
     },
     { 
       id: 'pa_2', name: 'Weighted Dips', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120, 
@@ -195,6 +196,7 @@ export const PULL_A_DAY: WorkoutDay = {
       action: 'Pull dumbbells towards hips. Squeeze back. Lower fully.',
       muscleFocus: 'Mid-Back', targetGroup: 'Back', feeling: 'Back thickness.', 
       pacer: PACER_PULL, metValue: 6.0, muscleSplit: { 'Mid Back': 70, 'Lats': 20, 'Biceps': 10 }, motionType: 'pull', isCompound: true,
+      benchAngle: 45,
       alternatives: [
           {
               id: 'pla_2_alt_1', name: 'Seated Cable Row (Triangle)', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120,
@@ -221,12 +223,13 @@ export const PULL_A_DAY: WorkoutDay = {
     { 
       id: 'pla_4', name: 'Incline DB Curls', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 120, 
       cues: 'Sit back. Elbows frozen behind ribs. No swinging.', 
-      setup: 'Bench at 45°. Sit back.',
+      setup: 'Bench at 60° (high incline). Sit back.',
       visualize: 'Arms dead-hanging behind you.',
       action: 'Keep elbows locked in place. Curl up without swinging. Squeeze peak at the top.',
       muscleFocus: 'Bicep Long Head', targetGroup: 'Biceps', feeling: 'Stretch in bicep near shoulder.', 
       pacer: { ...PACER_PULL, phases: [{ action: 'CURL', duration: 1, voiceCue: 'Curl Up', breathing: 'Exhale' }, { action: 'LOWER', duration: 3, voiceCue: 'Slow Down', breathing: 'Inhale' }] }, 
-      metValue: 4.0, muscleSplit: { 'Bicep Long Head': 80, 'Biceps': 20 }, motionType: 'curl', isCompound: false 
+      metValue: 4.0, muscleSplit: { 'Bicep Long Head': 80, 'Biceps': 20 }, motionType: 'curl', isCompound: false,
+      benchAngle: 60
     },
     { 
       id: 'pla_5', name: 'Barbell Preacher Curl', type: 'weighted', sets: 3, reps: '12', restSeconds: 90, 
@@ -385,7 +388,7 @@ export const PULL_B_DAY: WorkoutDay = {
       id: 'plb_2', name: 'Wide Grip Barbell Row', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120, 
       cues: 'Hinge forward. Pull bar to sternum.', 
       setup: 'Feet shoulder width. Overhand grip.',
-      visualize: 'Driving elbows through the ceiling.',
+      visualize: 'Driving elbows to ceiling.',
       action: 'Explode up to lower chest. Control down.',
       muscleFocus: 'Upper Back', targetGroup: 'Back', feeling: 'Upper back thickness.', 
       pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] }, 
