@@ -1,12 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Play, RefreshCw, X, Zap, AlertCircle, CheckCircle2, Smartphone, Volume2, VolumeX, Wind } from 'lucide-react';
-import { MotionCalibration, Exercise, PacerConfig, PacerPhase } from '../types';
+import { Activity, Play, RefreshCw, X, Zap, AlertCircle, CheckCircle2, Smartphone, Volume2, VolumeX, Wind, Lock } from 'lucide-react';
+import { MotionCalibration, Exercise, PacerConfig, PacerPhase, MuscleGroup } from '../types';
 import { saveCalibration, getCalibration } from '../services/storageService';
 
 interface Props {
   exercise: Exercise;
-  useSensors: boolean;
   onRepCount: (count: number) => void;
   onClose: () => void;
   targetReps: number;
@@ -14,16 +13,16 @@ interface Props {
 
 type TrackerState = 
   | 'INIT' 
-  | 'SETUP_POSITION' // Ask where phone is (if not known)
-  | 'CALIBRATION_INSTRUCTION' // "Do 1 Rep"
-  | 'CALIBRATING' // Measuring the rep
-  | 'CALIBRATION_SAVED' // Success state
-  | 'POSITION_REMINDER' // "Put phone in Pocket" (if known)
+  | 'SETUP_POSITION' 
+  | 'CALIBRATION_INSTRUCTION' 
+  | 'CALIBRATING' 
+  | 'CALIBRATION_SAVED' 
+  | 'POSITION_REMINDER' 
   | 'COUNTDOWN'
   | 'ACTIVE' 
   | 'FINISHED';
 
-const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onClose, targetReps }) => {
+const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetReps }) => {
   const [state, setState] = useState<TrackerState>('INIT');
   const [reps, setReps] = useState(0);
   const [feedback, setFeedback] = useState<string>("Get Ready");
@@ -47,10 +46,31 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const lastSpeechTime = useRef(0);
   const lastRepTime = useRef(0);
+  const stillnessTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Constants
-  const MOVEMENT_THRESHOLD = 1.5; 
-  const REP_COOLDOWN = 1000; 
+  const MOVEMENT_THRESHOLD_HIGH = 2.0; // Start rep threshold (m/s^2)
+  const MOVEMENT_THRESHOLD_LOW = 1.0;  // End rep threshold
+  const REP_COOLDOWN = 800; 
+
+  // --- DERIVE OPTIMAL POSITION ---
+  const getOptimalPosition = (ex: Exercise): 'Pocket' | 'Armband' | 'Hand' => {
+      const group = ex.targetGroup;
+      const motion = ex.motionType;
+
+      // Leg exercises -> Pocket (Hands usually holding weights)
+      if (group === 'Legs' || group === 'Abs') return 'Pocket';
+      
+      // Presses -> Armband preferred (Hands move linearly, pocket might bunch up)
+      if (motion === 'press' || group === 'Chest' || group === 'Shoulders') return 'Armband';
+      
+      // Arms/Pulling -> Hand allows seeing rotation, or Armband
+      if (group === 'Biceps' || group === 'Triceps' || motion === 'curl') return 'Hand';
+      
+      return 'Pocket'; // Default fallback
+  };
+
+  const recommendedPosition = getOptimalPosition(exercise);
 
   // --- INIT ---
   useEffect(() => {
@@ -58,27 +78,25 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
       synthRef.current = window.speechSynthesis;
     }
 
-    if (useSensors) {
-        // Check local storage for calibration
-        const saved = getCalibration(exercise.id);
-        if (saved) {
-            setCalibrationData(saved);
-            setPhonePosition(saved.position);
-            setState('POSITION_REMINDER');
-        } else {
-            setState('SETUP_POSITION');
-        }
+    // Check local storage for calibration
+    const saved = getCalibration(exercise.id);
+    if (saved) {
+        setCalibrationData(saved);
+        setPhonePosition(saved.position);
+        setState('POSITION_REMINDER');
     } else {
-        // No sensors, just go straight to pacer countdown
-        setState('COUNTDOWN');
+        // Enforce the recommended position initially
+        setPhonePosition(recommendedPosition);
+        setState('SETUP_POSITION');
     }
 
     return () => {
       stopSensors();
       stopPacerEngine();
       synthRef.current?.cancel();
+      if (stillnessTimer.current) clearTimeout(stillnessTimer.current);
     };
-  }, [exercise.id, useSensors]);
+  }, [exercise.id]);
 
   // --- HELPER: SPEECH ---
   const speak = (text: string, force = false) => {
@@ -101,6 +119,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
 
   // --- STEP 1: SENSOR PERMISSIONS ---
   const requestPermission = async (nextState: () => void) => {
+    // iOS 13+ support
     if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
       try {
         const response = await (DeviceMotionEvent as any).requestPermission();
@@ -115,6 +134,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
         setFeedback("Error accessing sensors.");
       }
     } else {
+      // Non-iOS
       setPermissionGranted(true);
       startSensors();
       nextState();
@@ -132,12 +152,15 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
   const beginCalibrationRep = () => {
       setState('CALIBRATING');
       speak("Go.");
+      // Reset logic
+      isMoving.current = false;
+      calibMaxForce.current = 0;
+      motionBuffer.current = [];
   };
 
   // --- STEP 3: STARTING WORKOUT ---
   const handleStartSet = () => {
-      // If sensors needed, ensure they are on
-      if (useSensors && !permissionGranted) {
+      if (!permissionGranted) {
           requestPermission(() => {
               startCountdown();
           });
@@ -164,6 +187,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
 
   const handleForceRecalibrate = () => {
       setCalibrationData(null);
+      setPhonePosition(recommendedPosition);
       setState('SETUP_POSITION');
   };
 
@@ -172,19 +196,30 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
   const stopSensors = () => window.removeEventListener('devicemotion', handleMotion);
 
   const handleMotion = (event: DeviceMotionEvent) => {
-    if (!event.acceleration) return;
-    const { x, y, z } = event.acceleration;
-    if (x === null || y === null || z === null) return;
+    let mag = 0;
 
-    const magnitude = Math.sqrt(x*x + y*y + z*z);
-    setDebugVal(magnitude); 
+    // PREFER Linear Acceleration (Gravity removed)
+    if (event.acceleration && event.acceleration.x !== null) {
+        const { x, y, z } = event.acceleration;
+        mag = Math.sqrt(x!*x! + y!*y! + z!*z!);
+    } 
+    // FALLBACK to Acceleration with Gravity (approximate)
+    else if (event.accelerationIncludingGravity && event.accelerationIncludingGravity.x !== null) {
+        const { x, y, z } = event.accelerationIncludingGravity;
+        const total = Math.sqrt(x!*x! + y!*y! + z!*z!);
+        // Simple filter: Movement is deviation from 9.8 (1 G)
+        // This handles rotation because 1G is 1G regardless of vector direction
+        mag = Math.abs(total - 9.8);
+    }
+
+    setDebugVal(mag); 
 
     const now = Date.now();
 
     if (state === 'CALIBRATING') {
-       processCalibration(magnitude, now);
-    } else if (state === 'ACTIVE' && useSensors) {
-       processActiveSet(magnitude, now);
+       processCalibration(mag, now);
+    } else if (state === 'ACTIVE') {
+       processActiveSet(mag, now);
     }
   };
 
@@ -193,37 +228,60 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
   const calibMaxForce = useRef(0);
   
   const processCalibration = (mag: number, now: number) => {
-      if (!isMoving.current && mag > MOVEMENT_THRESHOLD) {
+      // 1. Detect Start
+      if (!isMoving.current && mag > MOVEMENT_THRESHOLD_HIGH) {
           isMoving.current = true;
           calibStartTime.current = now;
           calibMaxForce.current = mag;
+          setFeedback("Detecting movement...");
       }
 
+      // 2. While Moving
       if (isMoving.current) {
           if (mag > calibMaxForce.current) calibMaxForce.current = mag;
           
-          if (mag < MOVEMENT_THRESHOLD) {
-             if (now - lastRepTime.current > 500) {
-                 const duration = now - calibStartTime.current;
-                 if (duration > 800) {
-                     const newData: MotionCalibration = {
-                         exerciseId: exercise.id,
-                         avgTime: duration,
-                         peakForce: calibMaxForce.current,
-                         position: phonePosition || 'Pocket',
-                         calibratedAt: new Date().toISOString()
-                     };
-                     setCalibrationData(newData);
-                     saveCalibration(newData); // PERSIST
-                     setState('CALIBRATION_SAVED');
-                     speak("Calibration Saved.");
-                     isMoving.current = false;
-                 }
-                 lastRepTime.current = now;
+          // 3. Detect End (Drop below LOW threshold)
+          if (mag < MOVEMENT_THRESHOLD_LOW) {
+             // Debounce: Must be still for 1s to confirm end
+             if (!stillnessTimer.current) {
+                 stillnessTimer.current = setTimeout(() => {
+                     // Timer completed = Confirmed Stop
+                     finishCalibration(now);
+                 }, 1000); // 1 second stillness
              }
           } else {
-              lastRepTime.current = now;
+              // Movement continued, cancel timer
+              if (stillnessTimer.current) {
+                  clearTimeout(stillnessTimer.current);
+                  stillnessTimer.current = null;
+              }
           }
+      }
+  };
+
+  const finishCalibration = (now: number) => {
+      // Safety check: ensure reasonable duration
+      const duration = now - calibStartTime.current - 1000; // Subtract the stillness wait
+      
+      if (duration > 800) {
+          const newData: MotionCalibration = {
+              exerciseId: exercise.id,
+              avgTime: duration,
+              peakForce: calibMaxForce.current,
+              position: phonePosition || 'Pocket',
+              calibratedAt: new Date().toISOString()
+          };
+          setCalibrationData(newData);
+          saveCalibration(newData); 
+          setState('CALIBRATION_SAVED');
+          speak("Calibration Saved.");
+          isMoving.current = false;
+          if (stillnessTimer.current) clearTimeout(stillnessTimer.current);
+      } else {
+          // Noise/False start
+          isMoving.current = false;
+          setFeedback("Too short. Try again.");
+          if (stillnessTimer.current) clearTimeout(stillnessTimer.current);
       }
   };
 
@@ -231,7 +289,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
   const processActiveSet = (mag: number, now: number) => {
       if (!calibrationData) return;
 
-      if (!isMoving.current && mag > MOVEMENT_THRESHOLD) {
+      if (!isMoving.current && mag > MOVEMENT_THRESHOLD_HIGH) {
           if (now - lastRepTime.current > REP_COOLDOWN) {
               isMoving.current = true;
               repStartTime.current = now;
@@ -247,9 +305,9 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
           const recent = motionBuffer.current.slice(-10);
           if (recent.length > 5) {
               const variance = recent.reduce((sum, val) => sum + Math.abs(val - mag), 0) / recent.length;
-              if (variance > 3.0) {
+              if (variance > 4.0) { // Higher tolerance for shaking
                   shakeCount.current++;
-                  if (shakeCount.current > 15) {
+                  if (shakeCount.current > 20) {
                       setFeedback("STABILIZE!");
                       speak("Stabilize!");
                       shakeCount.current = 0;
@@ -267,10 +325,13 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
           }
 
           // End Rep
-          if (mag < MOVEMENT_THRESHOLD) {
+          if (mag < MOVEMENT_THRESHOLD_LOW) {
+              // Quick Rep Logic: 500ms debounce
               if (now - lastRepTime.current > 500) {
+                  // We don't use strict stillness timer here for responsiveness, 
+                  // just a drop below threshold after min duration
                   const repDuration = now - repStartTime.current;
-                  if (repDuration > 500) {
+                  if (repDuration > 500) { // Min valid rep time
                       const newCount = reps + 1;
                       setReps(newCount);
                       onRepCount(newCount);
@@ -280,7 +341,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
                   }
               }
           } else {
-              lastRepTime.current = now;
+              lastRepTime.current = now; // Reset debounce timestamp
           }
       }
   };
@@ -379,25 +440,22 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
               return (
                   <div className="max-w-xs text-center animate-in zoom-in">
                       <Smartphone size={48} className="mx-auto text-gym-accent mb-4" />
-                      <h2 className="text-2xl font-bold text-white mb-2">Where is your phone?</h2>
-                      <p className="text-gray-400 text-sm mb-6">We need to know position to track reps accurately.</p>
-                      <div className="space-y-3">
-                          {['Pocket', 'Armband', 'Hand'].map((pos) => (
-                              <button 
-                                key={pos}
-                                onClick={() => setPhonePosition(pos as any)}
-                                className={`w-full py-3 rounded-lg border font-bold ${phonePosition === pos ? 'bg-gym-accent border-gym-accent text-white' : 'bg-gym-800 border-gym-700 text-gray-300'}`}
-                              >
-                                  {pos}
-                              </button>
-                          ))}
+                      <h2 className="text-2xl font-bold text-white mb-2">Required Placement</h2>
+                      <p className="text-gray-400 text-sm mb-6">For {exercise.name}, optimal sensor accuracy requires:</p>
+                      
+                      <div className="bg-gym-800 p-4 rounded-xl border border-gym-accent mb-6">
+                          <p className="text-xl font-bold text-white uppercase tracking-wider">{phonePosition}</p>
                       </div>
+
+                      <p className="text-xs text-gray-500 mb-6">
+                          Please secure your phone in your <b>{phonePosition}</b> before continuing.
+                      </p>
+                      
                       <button 
-                        disabled={!phonePosition}
                         onClick={handleStartCalibration}
-                        className="w-full mt-6 py-4 bg-white text-gym-900 font-bold rounded-xl disabled:opacity-50"
+                        className="w-full mt-2 py-4 bg-white text-gym-900 font-bold rounded-xl"
                       >
-                          Next
+                          I'm Set
                       </button>
                   </div>
               );
@@ -407,24 +465,32 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
                   <div className="max-w-xs text-center animate-in zoom-in">
                       <RefreshCw size={48} className="mx-auto text-yellow-500 mb-4" />
                       <h2 className="text-2xl font-bold text-white mb-2">Calibration</h2>
-                      <p className="text-gray-300 mb-6">Perform <b>1 PERFECT REP</b>. <br/>Full range of motion. Control the speed.</p>
+                      <p className="text-gray-300 mb-6">Perform <b>1 PERFECT REP</b> then hold still.</p>
                       <button 
                         onClick={beginCalibrationRep}
                         className="w-full py-4 bg-yellow-500 text-gym-900 font-bold rounded-xl"
                       >
-                          I'm Ready
+                          Start
                       </button>
                   </div>
               );
 
           case 'CALIBRATING':
               return (
-                  <div className="text-center animate-in zoom-in">
+                  <div className="text-center animate-in zoom-in w-full max-w-xs">
                       <h2 className="text-4xl font-black text-white mb-4">DO 1 REP</h2>
-                      <div className="w-64 h-2 bg-gym-800 rounded-full overflow-hidden mx-auto">
-                          <div className="h-full bg-yellow-500 transition-all duration-75" style={{width: `${Math.min(100, (debugVal/10)*100)}%`}}></div>
+                      <div className="w-full h-4 bg-gym-800 rounded-full overflow-hidden mx-auto mb-4">
+                          <div className="h-full bg-yellow-500 transition-all duration-75" style={{width: `${Math.min(100, (debugVal/15)*100)}%`}}></div>
                       </div>
-                      <p className="mt-4 text-gray-400 text-sm">Analyzing...</p>
+                      <p className="mt-4 text-gray-400 text-sm animate-pulse">Analyzing Motion...</p>
+                      
+                      {/* Manual Finish for stuck sensors */}
+                      <button 
+                        onClick={() => finishCalibration(Date.now() + 1000)} // Force finish with dummy duration if stuck
+                        className="mt-8 text-xs text-gray-500 underline"
+                      >
+                          Stuck? Tap to Finish
+                      </button>
                   </div>
               );
 
@@ -444,8 +510,10 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
                       <div className="bg-gym-800 p-6 rounded-2xl border border-gym-700 mb-6 relative">
                           <button onClick={handleForceRecalibrate} className="absolute top-2 right-2 text-xs text-gym-accent underline">Recalibrate</button>
                           <Smartphone size={32} className="mx-auto text-gray-400 mb-2" />
-                          <p className="text-gray-500 text-xs uppercase font-bold mb-1">Required Position</p>
-                          <h3 className="text-2xl font-bold text-white">{phonePosition}</h3>
+                          <p className="text-gray-500 text-xs uppercase font-bold mb-1">Position Check</p>
+                          <h3 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
+                              {phonePosition} <Lock size={16} className="text-gym-success"/>
+                          </h3>
                       </div>
                       <button 
                         onClick={handleStartSet}
@@ -473,14 +541,13 @@ const MotionTracker: React.FC<Props> = ({ exercise, useSensors, onRepCount, onCl
                               <h2 className="text-6xl font-black text-white leading-none">{reps}</h2>
                               <p className="text-gray-600 text-xs">Target: {targetReps}</p>
                           </div>
-                          {useSensors && (
-                              <div className="text-right">
-                                  <p className="text-gray-500 text-xs uppercase font-bold">AI Coach</p>
-                                  <div className={`text-xl font-bold ${feedback.includes('Fast') ? 'text-red-500' : 'text-green-400'}`}>
-                                      {feedback}
-                                  </div>
+                          
+                          <div className="text-right">
+                              <p className="text-gray-500 text-xs uppercase font-bold">AI Coach</p>
+                              <div className={`text-xl font-bold ${feedback.includes('Fast') ? 'text-red-500' : 'text-green-400'}`}>
+                                  {feedback}
                               </div>
-                          )}
+                          </div>
                       </div>
 
                       {/* Visual Pacer (Center) */}
