@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Smartphone, Activity, Settings2, Play, Pause, AlertCircle } from 'lucide-react';
+import { X, Smartphone, Activity, Zap, Play, Pause, RotateCcw, Crosshair } from 'lucide-react';
 import { Exercise } from '../types';
 
 interface Props {
@@ -10,67 +10,69 @@ interface Props {
   targetReps: number;
 }
 
-type MotionState = 'RESTING' | 'SQUEEZING' | 'MOVING';
+type TrackerState = 'IDLE' | 'LIFTING' | 'HOLDING' | 'LOWERING';
+
+interface RepStats {
+    duration: number;
+    peakForce: number;
+}
 
 const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetReps }) => {
-  const [status, setStatus] = useState<MotionState>('RESTING');
+  // UI State
+  const [status, setStatus] = useState<TrackerState>('IDLE');
   const [reps, setReps] = useState(0);
-  const [sensitivity, setSensitivity] = useState(50); // 0-100
-  const [debugVal, setDebugVal] = useState(0); // Current Variance
+  const [feedback, setFeedback] = useState<string>("Ready");
+  const [debugSignal, setDebugSignal] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   
-  // Refs for high-speed logic (avoiding re-renders)
-  const bufferRef = useRef<number[]>([]);
-  const stateRef = useRef<MotionState>('RESTING');
-  const stateDurationRef = useRef<number>(0);
-  const lastStateTimeRef = useRef<number>(Date.now());
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const graphDataRef = useRef<number[]>(new Array(100).fill(0));
+  // Logic Refs (The "State Machine" Memory)
+  const stateRef = useRef<TrackerState>('IDLE');
+  const repStartTimeRef = useRef<number>(0);
+  const lastPeakTimeRef = useRef<number>(0);
+  const peakForceRef = useRef<number>(0);
+  const lowSignalStartRef = useRef<number | null>(null);
+  
+  // Calibration Data (Rep 1 is Baseline)
+  const baselineRef = useRef<RepStats | null>(null);
+  
+  // Audio
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const repCycleRef = useRef<{ moved: boolean, squeezed: boolean }>({ moved: false, squeezed: false });
+  const lastSpeakTime = useRef(0);
 
-  // Constants based on sensitivity slider
-  // Squeeze Threshold: Low enough to catch trembling, high enough to ignore table vibrations
-  const getSqueezeThreshold = () => 0.05 + ((100 - sensitivity) / 100) * 0.5; 
-  const MOVE_THRESHOLD = 2.0; // High variance means big movement
+  // Constants
+  const GRAVITY = 9.81;
+  const THRESHOLD_HIGH = 1.25; // 1.25G to start (Solid movement)
+  const THRESHOLD_LOW = 1.15;  // 1.15G to consider "still" (breathing room)
+  const DEBOUNCE_TIME = 800;   // 800ms quiet to confirm rep end
+  const SQUEEZE_WINDOW = 1000; // If quiet within 1s of peak -> Squeeze
+  const MAX_REP_DURATION = 6000; // 6s max before auto-reset
 
   useEffect(() => {
     if ('speechSynthesis' in window) synthRef.current = window.speechSynthesis;
-    
     startSensors();
-    
-    // Animation Loop for Graph
-    let animId: number;
-    const draw = () => {
-        renderGraph();
-        animId = requestAnimationFrame(draw);
-    };
-    draw();
-
-    return () => {
-        stopSensors();
-        cancelAnimationFrame(animId);
-    };
+    return () => stopSensors();
   }, []);
 
+  // --- AUDIO ENGINE ---
   const speak = (text: string, force = false) => {
       if (!synthRef.current || isPaused) return;
-      if (synthRef.current.speaking && !force) return;
+      const now = Date.now();
+      if (!force && now - lastSpeakTime.current < 2000) return; // Don't spam
       
+      lastSpeakTime.current = now;
+      synthRef.current.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.2;
-      u.pitch = 1.1;
+      u.volume = 1.0;
       synthRef.current.speak(u);
   };
 
+  // --- SENSOR LOGIC ---
   const startSensors = () => {
-      // iOS 13+ Permission
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
           (DeviceMotionEvent as any).requestPermission()
-              .then((response: string) => {
-                  if (response === 'granted') {
-                      window.addEventListener('devicemotion', handleMotion);
-                  }
+              .then((res: string) => {
+                  if (res === 'granted') window.addEventListener('devicemotion', handleMotion);
               })
               .catch(console.error);
       } else {
@@ -88,253 +90,262 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       const acc = event.accelerationIncludingGravity;
       if (!acc) return;
 
-      // 1. Calculate Magnitude (Raw Energy)
-      // We subtract gravity roughly (9.8) or just rely on Variance handling static offsets automatically.
-      // Variance = Spread from mean. Static gravity (9.8 constant) has 0 variance.
+      // 1. Universal Metric: Normalized G-Force
       const x = acc.x || 0;
       const y = acc.y || 0;
       const z = acc.z || 0;
-      const magnitude = Math.sqrt(x*x + y*y + z*z);
+      const rawMag = Math.sqrt(x*x + y*y + z*z);
+      const gForce = rawMag / GRAVITY; // 1.0 = Still (Gravity only)
 
-      // 2. Add to Buffer (Window of ~20 frames / 300ms)
-      bufferRef.current.push(magnitude);
-      if (bufferRef.current.length > 20) bufferRef.current.shift();
+      // Debug View (Throttle updates)
+      if (Math.random() > 0.8) setDebugSignal(gForce);
 
-      // 3. Calculate Variance (The "Jitter")
-      // Mean
-      const sum = bufferRef.current.reduce((a, b) => a + b, 0);
-      const mean = sum / bufferRef.current.length;
-      // Variance
-      const variance = bufferRef.current.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / bufferRef.current.length;
-      
-      // Update Graph Data
-      graphDataRef.current.push(variance);
-      if (graphDataRef.current.length > 100) graphDataRef.current.shift();
-      
-      // Update Debug UI occasionally
-      if (Math.random() > 0.9) setDebugVal(variance);
+      processStateMachine(gForce);
+  };
 
-      // 4. Determine State
-      const squeezeThresh = getSqueezeThreshold();
-      let newState: MotionState = 'RESTING';
-
-      if (variance > MOVE_THRESHOLD) {
-          newState = 'MOVING';
-      } else if (variance > squeezeThresh) {
-          newState = 'SQUEEZING';
-      } else {
-          newState = 'RESTING';
-      }
-
-      // 5. State Machine Logic
+  const processStateMachine = (mag: number) => {
       const now = Date.now();
-      const timeInState = now - lastStateTimeRef.current;
+      const currentState = stateRef.current;
 
-      if (newState !== stateRef.current) {
-          handleStateChange(stateRef.current, newState, timeInState);
-          stateRef.current = newState;
-          lastStateTimeRef.current = now;
-          setStatus(newState);
-      } else {
-          // Continuous State Logic
-          if (newState === 'SQUEEZING' && timeInState > 3000 && timeInState < 3100) {
-              speak("Perfect control.");
-          }
-          if (newState === 'RESTING' && timeInState > 3000 && timeInState < 3100 && reps > 0 && reps < targetReps) {
-              speak("Don't stop.");
-          }
+      // Track Peak Force during the active rep
+      if (currentState !== 'IDLE' && mag > peakForceRef.current) {
+          peakForceRef.current = mag;
+          lastPeakTimeRef.current = now;
+      }
+
+      // --- STATE MACHINE ---
+      switch (currentState) {
+          case 'IDLE':
+              // START CONDITION: Significant movement
+              if (mag > THRESHOLD_HIGH) {
+                  transitionTo('LIFTING', now);
+                  speak("Up");
+              }
+              break;
+
+          case 'LIFTING':
+              // Moving the weight...
+              if (mag < THRESHOLD_LOW) {
+                  // Signal dropped. Start counting "Quiet Time"
+                  if (!lowSignalStartRef.current) lowSignalStartRef.current = now;
+                  
+                  const quietDuration = now - lowSignalStartRef.current;
+
+                  // SQUEEZE DETECTOR:
+                  // If we just had a peak (<1s ago) and now it's quiet -> We are holding at top
+                  if (quietDuration > 300 && (now - lastPeakTimeRef.current) < SQUEEZE_WINDOW) {
+                      transitionTo('HOLDING', now);
+                      speak("Hold...");
+                  }
+                  // END REP DETECTOR (If no squeeze happening):
+                  else if (quietDuration > DEBOUNCE_TIME) {
+                      completeRep(now);
+                  }
+              } else {
+                  // Signal high again, reset quiet timer
+                  lowSignalStartRef.current = null;
+              }
+              break;
+
+          case 'HOLDING':
+              // User is Squeezing...
+              if (mag > THRESHOLD_HIGH) {
+                  // Signal Spikes -> Moving to Eccentric (Lowering)
+                  transitionTo('LOWERING', now);
+                  lowSignalStartRef.current = null;
+              } else if (mag < THRESHOLD_LOW) {
+                  // Still holding... or done?
+                  if (!lowSignalStartRef.current) lowSignalStartRef.current = now;
+                  
+                  // If held/quiet for too long (> 1.5s), assume rep is done (dropped weight)
+                  if ((now - lowSignalStartRef.current) > 1500) {
+                      completeRep(now);
+                  }
+              }
+              break;
+
+          case 'LOWERING':
+              // Eccentric phase
+              if (mag < THRESHOLD_LOW) {
+                  if (!lowSignalStartRef.current) lowSignalStartRef.current = now;
+                  if ((now - lowSignalStartRef.current) > DEBOUNCE_TIME) {
+                      completeRep(now);
+                  }
+              } else {
+                  lowSignalStartRef.current = null;
+              }
+              break;
+      }
+
+      // FAIL SAFE: Auto-reset if stuck in active state too long
+      if (currentState !== 'IDLE' && (now - repStartTimeRef.current) > MAX_REP_DURATION) {
+          // If we had decent force, count it. If not, discard.
+          if (peakForceRef.current > 1.3) completeRep(now);
+          else resetMachine();
       }
   };
 
-  const handleStateChange = (prev: MotionState, next: MotionState, duration: number) => {
-      // Rep Counting Logic:
-      // A rep is: MOVING -> (Maybe SQUEEZING) -> MOVING -> RESTING
-      // Simple logic: If we come from MOVING and go to RESTING/SQUEEZING, check if we did enough work.
+  const transitionTo = (newState: TrackerState, now: number) => {
+      stateRef.current = newState;
+      setStatus(newState);
       
-      if (next === 'MOVING') {
-          repCycleRef.current.moved = true;
+      if (newState === 'LIFTING') {
+          repStartTimeRef.current = now;
+          peakForceRef.current = 0;
+          lowSignalStartRef.current = null;
+          setFeedback("Drive!");
       }
-      
-      if (next === 'SQUEEZING') {
-          repCycleRef.current.squeezed = true;
-          if (prev === 'MOVING') speak("Hold that squeeze.");
+      if (newState === 'HOLDING') {
+          setFeedback("Squeezing...");
       }
+      if (newState === 'LOWERING') {
+          setFeedback("Control Down");
+      }
+  };
 
-      if (prev === 'SQUEEZING' && next === 'RESTING') {
-          // If squeezed for very short time
-          if (duration < 500) speak("Don't drop it yet!");
-      }
+  const completeRep = (now: number) => {
+      const duration = now - repStartTimeRef.current;
+      const peak = peakForceRef.current;
 
-      // End of Rep Logic:
-      // If we go to RESTING after having MOVED significantly
-      if (next === 'RESTING' && repCycleRef.current.moved) {
-          // Debounce rapid state flicks
-          if (prev === 'MOVING' || prev === 'SQUEEZING') {
-             const newReps = reps + 1;
-             setReps(newReps);
-             onRepCount(newReps);
-             
-             const remaining = targetReps - newReps;
-             if (remaining === 0) speak("Set Complete!", true);
-             else speak(newReps.toString(), true);
-             
-             // Reset Cycle
-             repCycleRef.current = { moved: false, squeezed: false };
+      // --- AUTO CALIBRATION LOGIC ---
+      let feedbackMsg = "Good Rep";
+      let voiceCue = String(reps + 1);
+
+      if (reps === 0) {
+          // REP 1: Set Baseline
+          baselineRef.current = { duration, peakForce: peak };
+          feedbackMsg = "Baseline Set";
+          voiceCue = "One. Calibrated.";
+      } else if (baselineRef.current) {
+          // REP 2+: Compare
+          const base = baselineRef.current;
+          
+          // Check Tempo
+          if (duration > base.duration * 1.5) {
+              feedbackMsg = "Too Slow! Speed Up!";
+              voiceCue = "Speed up!";
+          } 
+          // Check Intensity
+          else if (peak < base.peakForce * 0.85) {
+              feedbackMsg = "Weak! Push Harder!";
+              voiceCue = "Push harder!";
           }
       }
-  };
 
-  const renderGraph = () => {
-      const cvs = canvasRef.current;
-      if (!cvs) return;
-      const ctx = cvs.getContext('2d');
-      if (!ctx) return;
+      // Update State
+      const newReps = reps + 1;
+      setReps(newReps);
+      onRepCount(newReps);
+      setFeedback(feedbackMsg);
+      speak(voiceCue, true);
 
-      const w = cvs.width;
-      const h = cvs.height;
-      const data = graphDataRef.current;
+      // Reset
+      resetMachine();
 
-      ctx.clearRect(0, 0, w, h);
-      
-      // Draw Zones
-      const squeezeY = h - (getSqueezeThreshold() * 50); // Scale factor for viz
-      const moveY = h - (MOVE_THRESHOLD * 50);
-      
-      // Zone Backgrounds
-      ctx.fillStyle = '#1e293b'; // Resting (Bottom)
-      ctx.fillRect(0, squeezeY, w, h - squeezeY);
-      
-      ctx.fillStyle = '#1a2e05'; // Squeezing (Middle) - Dark Green
-      ctx.fillRect(0, moveY, w, squeezeY - moveY);
-      
-      ctx.fillStyle = '#2a1a05'; // Moving (Top) - Dark Orange
-      ctx.fillRect(0, 0, w, moveY);
-
-      // Draw Threshold Lines
-      ctx.strokeStyle = '#4ade80'; // Green Line (Squeeze Threshold)
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(0, squeezeY);
-      ctx.lineTo(w, squeezeY);
-      ctx.stroke();
-      
-      ctx.strokeStyle = '#f97316'; // Orange Line (Move Threshold)
-      ctx.beginPath();
-      ctx.moveTo(0, moveY);
-      ctx.lineTo(w, moveY);
-      ctx.stroke();
-
-      // Draw Signal Line
-      ctx.strokeStyle = '#fff';
-      ctx.setLineDash([]);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      
-      for (let i = 0; i < data.length; i++) {
-          const x = (i / data.length) * w;
-          // Scale variance for display (multiply by 50 is arbitrary to make it visible)
-          const y = h - (data[i] * 50); 
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+      // Check Target
+      if (newReps >= targetReps) {
+          speak("Set Complete", true);
       }
-      ctx.stroke();
   };
 
+  const resetMachine = () => {
+      stateRef.current = 'IDLE';
+      setStatus('IDLE');
+      lowSignalStartRef.current = null;
+      peakForceRef.current = 0;
+  };
+
+  // --- RENDER ---
   return (
     <div className="fixed inset-0 z-[60] bg-gym-900 flex flex-col">
-       {/* HEADER */}
+       {/* Header */}
        <div className="p-4 bg-gym-800 border-b border-gym-700 flex justify-between items-center">
            <div>
                <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
-               <p className="text-xs text-gray-400">Jitter Engine Active</p>
+               <p className="text-xs text-green-400 font-mono flex items-center gap-1">
+                   <Zap size={10} /> ADAPTIVE ENGINE ACTIVE
+               </p>
            </div>
            <button onClick={onClose} className="p-2 bg-gym-700 rounded-full text-white"><X size={20}/></button>
        </div>
 
-       {/* GRAPH VISUALIZER */}
-       <div className="relative h-48 w-full bg-black">
-           <canvas 
-             ref={canvasRef} 
-             width={window.innerWidth} 
-             height={192} 
-             className="w-full h-full"
-           />
-           <div className="absolute top-2 left-2 text-[10px] font-mono text-gray-500">
-               VAR: {debugVal.toFixed(4)}
-           </div>
-           <div className="absolute top-2 right-2 flex gap-2">
-               <span className={`text-xs font-bold px-2 py-1 rounded ${status === 'MOVING' ? 'bg-orange-500 text-white' : 'bg-gym-800 text-gray-500'}`}>MOVE</span>
-               <span className={`text-xs font-bold px-2 py-1 rounded ${status === 'SQUEEZING' ? 'bg-green-500 text-white' : 'bg-gym-800 text-gray-500'}`}>SQUEEZE</span>
-               <span className={`text-xs font-bold px-2 py-1 rounded ${status === 'RESTING' ? 'bg-blue-500 text-white' : 'bg-gym-800 text-gray-500'}`}>REST</span>
-           </div>
-       </div>
-
-       {/* CONTROLS */}
-       <div className="flex-1 p-6 flex flex-col items-center">
+       {/* MAIN VISUALIZER */}
+       <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
            
+           {/* Animated Background Pulse based on Signal */}
+           <div 
+             className="absolute rounded-full bg-gym-accent/10 transition-all duration-75 ease-linear"
+             style={{ 
+                 width: `${debugSignal * 100}px`, 
+                 height: `${debugSignal * 100}px`,
+                 opacity: Math.max(0, (debugSignal - 1) * 2) 
+             }}
+           ></div>
+
            {/* Rep Counter */}
-           <div className="mb-8 text-center relative">
-               <div className={`text-9xl font-black transition-colors duration-200 ${
-                   status === 'MOVING' ? 'text-orange-500' :
-                   status === 'SQUEEZING' ? 'text-green-500' : 'text-gray-700'
+           <div className="z-10 text-center mb-8">
+               <h1 className={`text-9xl font-black transition-colors ${
+                   status === 'LIFTING' ? 'text-blue-500' :
+                   status === 'HOLDING' ? 'text-green-500' :
+                   status === 'LOWERING' ? 'text-orange-500' : 'text-white'
                }`}>
                    {reps}
-               </div>
-               <p className="text-gray-500 font-bold tracking-widest uppercase mt-2">Repetitions</p>
+               </h1>
+               <p className="text-gray-500 font-bold tracking-widest uppercase text-sm">Repetitions</p>
            </div>
 
-           {/* Sensitivity Slider */}
-           <div className="w-full max-w-xs bg-gym-800 p-4 rounded-xl border border-gym-700">
-               <div className="flex justify-between items-center mb-2">
-                   <div className="flex items-center gap-2 text-white font-bold">
-                       <Settings2 size={16} className="text-gym-accent" />
-                       Squeeze Sensitivity
+           {/* Feedback Pill */}
+           <div className={`z-10 px-6 py-3 rounded-full border-2 font-bold text-lg animate-pulse transition-colors ${
+               status === 'IDLE' ? 'border-gray-700 bg-gray-800 text-gray-400' :
+               status === 'HOLDING' ? 'border-green-500 bg-green-500/20 text-green-400' :
+               'border-blue-500 bg-blue-500/20 text-blue-400'
+           }`}>
+               {feedback}
+           </div>
+
+           {/* DEBUG CONSOLE (Visual Debugger) */}
+           <div className="mt-12 w-64 bg-black/50 p-4 rounded-lg font-mono text-xs text-left space-y-2 border border-white/10">
+               <div className="flex justify-between border-b border-white/10 pb-1 mb-1">
+                   <span className="text-gray-400">DEBUGGER</span>
+                   <Activity size={12} className="text-green-400" />
+               </div>
+               <div className="flex justify-between">
+                   <span className="text-gray-500">STATE:</span>
+                   <span className={`font-bold ${status === 'IDLE' ? 'text-gray-300' : 'text-yellow-400'}`}>{status}</span>
+               </div>
+               <div className="flex justify-between">
+                   <span className="text-gray-500">SIGNAL:</span>
+                   <span className="text-blue-300">{debugSignal.toFixed(3)} G</span>
+               </div>
+               <div className="flex justify-between">
+                   <span className="text-gray-500">PEAK:</span>
+                   <span className="text-red-300">{peakForceRef.current.toFixed(2)} G</span>
+               </div>
+               {baselineRef.current && (
+                   <div className="pt-2 mt-2 border-t border-white/10">
+                       <p className="text-gray-500 text-[10px] mb-1">REP 1 BASELINE:</p>
+                       <div className="flex justify-between">
+                           <span>Force: {baselineRef.current.peakForce.toFixed(2)}</span>
+                           <span>Time: {(baselineRef.current.duration/1000).toFixed(1)}s</span>
+                       </div>
                    </div>
-                   <span className="text-gym-accent">{sensitivity}%</span>
-               </div>
-               <input 
-                 type="range" 
-                 min="0" max="100" 
-                 value={sensitivity} 
-                 onChange={(e) => setSensitivity(Number(e.target.value))}
-                 className="w-full h-2 bg-gym-900 rounded-lg appearance-none cursor-pointer accent-gym-accent"
-               />
-               <p className="text-xs text-gray-500 mt-2">
-                   Higher = Easier to trigger "Squeeze". Lower = Requires more shaking.
-               </p>
-           </div>
-
-           {/* Status Message */}
-           <div className="mt-8 flex items-center gap-3 animate-pulse">
-               {status === 'SQUEEZING' && (
-                   <>
-                     <Activity className="text-green-500" /> 
-                     <span className="text-green-400 font-bold text-lg">HOLD THAT TENSION...</span>
-                   </>
-               )}
-               {status === 'MOVING' && (
-                   <span className="text-orange-400 font-bold text-lg">MOVING WEIGHT...</span>
-               )}
-               {status === 'RESTING' && (
-                   <span className="text-gray-500 font-bold">READY</span>
                )}
            </div>
-
-           {/* Instructions */}
-           {reps === 0 && (
-               <div className="mt-auto mb-4 bg-yellow-500/10 border border-yellow-500/20 p-3 rounded-lg flex gap-3 text-left">
-                   <AlertCircle className="text-yellow-500 flex-shrink-0" size={20} />
-                   <p className="text-xs text-yellow-200">
-                       <b>How to use:</b> This sensor detects muscle tremors (jitter). 
-                       When you lift, the line goes Orange. When you hold/squeeze, the line should be Green (shaky). If it's Blue, you are too still (increase sensitivity).
-                   </p>
-               </div>
-           )}
-
        </div>
 
-       {/* Footer Controls */}
+       {/* Footer */}
        <div className="p-4 bg-gym-800 border-t border-gym-700 flex gap-4">
+           <button 
+             onClick={() => {
+                 setReps(0);
+                 resetMachine();
+                 baselineRef.current = null;
+                 setFeedback("Ready");
+             }}
+             className="p-4 bg-gym-700 rounded-xl text-white"
+           >
+               <RotateCcw size={24} />
+           </button>
            <button 
              onClick={() => setIsPaused(!isPaused)}
              className="flex-1 py-4 bg-gym-700 text-white font-bold rounded-xl flex items-center justify-center gap-2"
@@ -345,7 +356,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
              onClick={onClose}
              className="flex-1 py-4 bg-red-600/20 text-red-500 border border-red-500/50 font-bold rounded-xl"
            >
-               Stop Sensor
+               Stop
            </button>
        </div>
     </div>
