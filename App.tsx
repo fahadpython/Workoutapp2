@@ -135,7 +135,7 @@ const App: React.FC = () => {
     });
   };
 
-  const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false) => {
+  const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false, rpe?: number) => {
     if (!currentSession || !currentSession.activeExerciseId || !activePlan) return;
     
     const exerciseId = currentSession.activeExerciseId;
@@ -180,6 +180,7 @@ const App: React.FC = () => {
     updatedCompleted[exerciseId].push({
       weight: metric1, // Or Distance
       reps: metric2,   // Or Time
+      rpe,             // NEW: Store RPE
       completed: true,
       timestamp: Date.now(),
       isDropSet,
@@ -188,7 +189,7 @@ const App: React.FC = () => {
     });
 
     // Save persistent history log
-    saveExerciseLog(exerciseId, metric1, metric2, setNumber);
+    saveExerciseLog(exerciseId, metric1, metric2, setNumber, rpe);
 
     // Start Timer logic 
     // UPDATE: Now we trigger the timer even on the last set to serve as a "Transition Timer"

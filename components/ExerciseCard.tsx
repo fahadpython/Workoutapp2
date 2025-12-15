@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -10,7 +10,7 @@ import MotionTracker from './MotionTracker';
 interface Props {
   exercise: Exercise;
   completedSets: SetLog[];
-  onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean) => void;
+  onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean, rpe?: number) => void;
   onBack: () => void;
 }
 
@@ -313,6 +313,7 @@ const ExerciseCard: React.FC<Props> = ({
   const [history, setHistory] = useState<ExerciseHistory | null>(null);
   const [metric1, setMetric1] = useState<string>(''); // Weight or Distance
   const [metric2, setMetric2] = useState<string>(''); // Reps or Time
+  const [rpe, setRpe] = useState<number>(8); // Default RPE
   const [setMode, setSetMode] = useState<0 | 1 | 2>(0);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -389,7 +390,7 @@ const ExerciseCard: React.FC<Props> = ({
     const isDrop = setMode === 1;
     const isMonster = setMode === 2;
 
-    onLogSet(m1, m2, isDrop, isMonster);
+    onLogSet(m1, m2, isDrop, isMonster, rpe); // Pass RPE
     setShowMotionTracker(false);
     
     // Provide Coach Feedback
@@ -474,6 +475,20 @@ const ExerciseCard: React.FC<Props> = ({
   
   const isBreakingRecord = bestHistorical1RM > 0 && projected1RM > bestHistorical1RM;
   
+  const getRPEColor = (val: number) => {
+      if (val < 7) return 'text-green-400';
+      if (val < 9) return 'text-yellow-400';
+      return 'text-red-500';
+  };
+
+  const getRPEDescription = (val: number) => {
+      if (val <= 6) return "Easy";
+      if (val === 7) return "Strenuous (3 left)";
+      if (val === 8) return "Hard (2 left)";
+      if (val === 9) return "Very Hard (1 left)";
+      return "Max Effort (Failure)";
+  }
+  
   return (
     <div className="flex flex-col h-full animate-in slide-in-from-right duration-300 relative">
       {/* Top Navigation */}
@@ -524,19 +539,24 @@ const ExerciseCard: React.FC<Props> = ({
           </div>
       )}
 
-      {/* --- SMART COACH BANNER --- */}
+      {/* --- SMART COACH BANNER (Auto-Pilot) --- */}
       {recommendation && recommendation.type !== 'BASELINE' && completedSets.length < exercise.sets && !plateauAlert && (
         <div className={`mb-4 p-3 rounded-lg border flex items-start gap-3 animate-in fade-in slide-in-from-top-1
-            ${recommendation.type === 'INCREASE' ? 'bg-gradient-to-r from-blue-900/50 to-blue-800/30 border-blue-500/30' : 'bg-gym-800 border-gym-700'}
+            ${recommendation.type === 'INCREASE' ? 'bg-gradient-to-r from-blue-900/50 to-blue-800/30 border-blue-500/30' : 
+              recommendation.type === 'DECREASE' ? 'bg-orange-900/20 border-orange-500/30' : 'bg-gym-800 border-gym-700'}
         `}>
             <div className="p-2 bg-gym-900 rounded-full border border-gym-600">
                 <BrainCircuit size={16} className="text-gym-accent" />
             </div>
             <div>
-                <p className="text-xs font-bold text-gym-accent uppercase tracking-wider mb-1">Smart Coach</p>
+                <div className="flex justify-between items-center w-full mb-1">
+                    <p className="text-xs font-bold text-gym-accent uppercase tracking-wider">Auto-Pilot</p>
+                    {recommendation.type === 'INCREASE' && <span className="text-[10px] text-green-400 font-bold bg-green-900/40 px-1 rounded">PROGRESSIVE OVERLOAD</span>}
+                    {recommendation.type === 'DECREASE' && <span className="text-[10px] text-orange-400 font-bold bg-orange-900/40 px-1 rounded">DELOAD</span>}
+                </div>
                 <p className="text-sm text-white font-medium mb-1">{recommendation.reason}</p>
                 <p className="text-xs text-gray-400">
-                   Target: <span className="text-white font-bold">{recommendation.targetWeight}kg</span> for <span className="text-white font-bold">{recommendation.targetReps} reps</span>
+                   Target: <span className="text-white font-bold text-lg">{recommendation.targetWeight}kg</span> for <span className="text-white font-bold">{recommendation.targetReps} reps</span>
                 </p>
             </div>
         </div>
@@ -701,6 +721,33 @@ const ExerciseCard: React.FC<Props> = ({
                           </div>
                         </div>
 
+                        {/* RPE SLIDER */}
+                        {!isCardio && (
+                            <div className="mb-4 relative z-10">
+                                <div className="flex justify-between items-end mb-2">
+                                    <label className="text-xs text-gray-400 font-bold uppercase flex items-center gap-1">
+                                        <Gauge size={12}/> RPE (Effort)
+                                    </label>
+                                    <span className={`text-xs font-bold ${getRPEColor(rpe)}`}>
+                                        {rpe} / 10 - {getRPEDescription(rpe)}
+                                    </span>
+                                </div>
+                                <input 
+                                    type="range" 
+                                    min="1" 
+                                    max="10" 
+                                    step="0.5"
+                                    value={rpe}
+                                    onChange={(e) => setRpe(parseFloat(e.target.value))}
+                                    className="w-full h-2 bg-gym-700 rounded-lg appearance-none cursor-pointer accent-gym-accent"
+                                />
+                                <div className="flex justify-between px-1 mt-1">
+                                    <span className="text-[9px] text-gray-600">Easy</span>
+                                    <span className="text-[9px] text-gray-600">Failure</span>
+                                </div>
+                            </div>
+                        )}
+
                         {/* 1RM PROJECTOR */}
                         {!isCardio && (
                             <div className={`mb-6 relative z-10 p-2 rounded-lg border transition-all duration-300 flex items-center justify-center gap-3 ${isBreakingRecord ? 'bg-gym-accent/20 border-gym-accent shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'bg-gym-900/50 border-gym-700/50'}`}>
@@ -798,7 +845,8 @@ const ExerciseCard: React.FC<Props> = ({
                              {!exercise.isWarmup && ' × '}
                              {isCardio ? `${set.reps}min` : exercise.isWarmup ? `Complete (${set.reps} reps)` : (isTimed ? `${set.reps}s` : `${set.reps} reps`)}
                          </span>
-                         <div className="flex gap-2">
+                         <div className="flex gap-2 items-center">
+                            {set.rpe && <span className={`text-[10px] font-bold ${getRPEColor(set.rpe)} border border-gray-700 px-1 rounded`}>RPE {set.rpe}</span>}
                             {set.isDropSet && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Drop Set</span>}
                             {set.isMonsterSet && <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Monster Set</span>}
                             {set.calories && <span className="text-[10px] text-orange-400 flex items-center gap-1"><Flame size={8} fill="currentColor"/> {set.calories}</span>}
@@ -832,9 +880,12 @@ const ExerciseCard: React.FC<Props> = ({
              {history.logs.map((log, i) => (
                <div key={i} className="flex justify-between items-center p-3 bg-gym-800 rounded border border-gym-700">
                  <span className="text-sm text-gray-400">{log.date}</span>
-                 <span className="font-mono text-white font-bold">
-                    {isCardio ? `${log.weight}km in ${log.reps}min` : `${log.weight}kg × ${log.reps}`}
-                 </span>
+                 <div className="text-right">
+                    <span className="font-mono text-white font-bold block">
+                        {isCardio ? `${log.weight}km in ${log.reps}min` : `${log.weight}kg × ${log.reps}`}
+                    </span>
+                    {log.rpe && <span className="text-xs text-gray-500 font-bold">RPE {log.rpe}</span>}
+                 </div>
                </div>
              ))}
            </div>

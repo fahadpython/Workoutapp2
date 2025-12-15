@@ -54,6 +54,7 @@ export interface WorkoutDay {
 export interface SetLog {
   weight: number; // For cardio: Distance
   reps: number; // For cardio: Time (minutes)
+  rpe?: number; // New: Rate of Perceived Exertion (1-10)
   completed: boolean;
   timestamp: number;
   isDropSet?: boolean; 
@@ -93,6 +94,7 @@ export interface HistoryLog {
   date: string; // ISO date
   weight: number;
   reps: number;
+  rpe?: number; // New: RPE History
   setNumber: number;
 }
 
@@ -100,7 +102,7 @@ export interface ExerciseHistory {
   logs: HistoryLog[];
   lastSession?: {
     date: string;
-    topSet: { weight: number; reps: number };
+    topSet: { weight: number; reps: number; rpe?: number };
   };
 }
 

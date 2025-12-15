@@ -82,7 +82,7 @@ export const calculateCalories = (metric1: number, metric2: number, metValue: nu
 
 // --- History Management ---
 
-export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number) => {
+export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number, rpe?: number) => {
   const historyRaw = localStorage.getItem(KEYS.HISTORY);
   const history = historyRaw ? JSON.parse(historyRaw) : {};
   
@@ -92,7 +92,8 @@ export const saveExerciseLog = (exerciseId: string, weight: number, reps: number
     date: getTodayString(),
     weight,
     reps,
-    setNumber
+    setNumber,
+    rpe
   };
   
   // Append new log
@@ -116,17 +117,20 @@ export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null =
   
   let lastSession = undefined;
   if (previousLogs.length > 0) {
-    // Sort by date desc, then weight desc to find "Top Set" of last session
+    // Sort by date desc
     previousLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const lastDate = previousLogs[0].date;
     const lastDateLogs = previousLogs.filter(l => l.date === lastDate);
     
     // Find best performance (highest weight, then reps)
+    // We treat the "Top Set" as the one with max weight.
     lastDateLogs.sort((a, b) => b.weight - a.weight || b.reps - a.reps);
     
+    const bestLog = lastDateLogs[0];
+
     lastSession = {
       date: lastDate,
-      topSet: { weight: lastDateLogs[0].weight, reps: lastDateLogs[0].reps }
+      topSet: { weight: bestLog.weight, reps: bestLog.reps, rpe: bestLog.rpe }
     };
   }
 
@@ -239,7 +243,6 @@ export const getDashboardStats = (): DashboardStats => {
     
     if (!exerciseDef) {
        // Try custom if not in standard
-       // Note: In a real app we'd load custom defs from storage too, but for summary this is ok
        exerciseDef = { 
          id: exerciseId, 
          name: 'Exercise', 
@@ -366,7 +369,7 @@ export const getCreatineStats = (history: string[]) => {
   return { thisWeek, thisMonth };
 };
 
-// --- PROGRESSION ENGINE (Smart Algo) ---
+// --- PROGRESSION ENGINE (Linear Progression - Auto Pilot) ---
 
 const parseRepRange = (repStr: string): { min: number, max: number } => {
   // Handles "8-10", "15", "Failure"
@@ -377,6 +380,11 @@ const parseRepRange = (repStr: string): { min: number, max: number } => {
   }
   const val = parseInt(repStr);
   return { min: val, max: val };
+};
+
+const roundToPlate = (weight: number) => {
+    // Rounds to nearest 1.25kg (standard fractional plate logic)
+    return Math.round(weight / 1.25) * 1.25;
 };
 
 export const getProgressionRecommendation = (exercise: Exercise): CoachRecommendation => {
@@ -393,31 +401,73 @@ export const getProgressionRecommendation = (exercise: Exercise): CoachRecommend
   }
 
   const { topSet } = history.lastSession;
-  const { min, max } = parseRepRange(exercise.reps);
+  const { min } = parseRepRange(exercise.reps);
   
-  // Logic: Double Progression
-  // 1. Did we hit the top of the rep range?
-  if (topSet.reps >= max) {
-    // Determine weight jump based on exercise type
-    const jump = exercise.isCompound ? 2.5 : 1.25; // Smaller jumps for isolation
-    const newWeight = topSet.weight + jump;
-    
-    return {
-      type: 'INCREASE',
-      targetWeight: newWeight,
-      targetReps: `${min}-${max}`,
-      reason: `You crushed ${topSet.reps} reps last time! Increase weight by ${jump}kg.`
-    };
-  } else {
-    // We didn't hit the top range. Stay at weight, aim for more reps.
-    const target = Math.min(topSet.reps + 1, max);
-    return {
+  // If no RPE recorded yet, fallback to old logic (Did we hit target reps?)
+  if (topSet.rpe === undefined) {
+      if (topSet.reps >= min) {
+          const jump = exercise.isCompound ? 2.5 : 1.25;
+          return {
+              type: 'INCREASE',
+              targetWeight: topSet.weight + jump,
+              targetReps: exercise.reps,
+              reason: `History found (No RPE). You hit ${topSet.reps} reps. Increase weight by ${jump}kg.`
+          };
+      } else {
+          return {
+              type: 'MAINTAIN',
+              targetWeight: topSet.weight,
+              targetReps: exercise.reps,
+              reason: "History found (No RPE). Maintain weight until you hit target reps."
+          };
+      }
+  }
+
+  const rpe = topSet.rpe;
+
+  // --- AUTO-PILOT ALGORITHM ---
+
+  // 1. Missed Reps (Failure)
+  if (topSet.reps < min) {
+      const newWeight = roundToPlate(topSet.weight * 0.90); // -10% Deload
+      return {
+          type: 'DECREASE',
+          targetWeight: newWeight,
+          targetReps: exercise.reps,
+          reason: `Missed reps (${topSet.reps} vs ${min}). Auto-Deload -10% to reset form.`
+      };
+  }
+
+  // 2. Too Easy (RPE < 7)
+  if (rpe < 7) {
+      const newWeight = roundToPlate(topSet.weight * 1.05); // +5%
+      return {
+          type: 'INCREASE',
+          targetWeight: newWeight,
+          targetReps: exercise.reps,
+          reason: `RPE ${rpe} (Too Easy). Auto-Pilot increasing load by +5%.`
+      };
+  }
+
+  // 3. Perfect (RPE 7-8)
+  if (rpe >= 7 && rpe <= 8) {
+      const newWeight = roundToPlate(topSet.weight * 1.025); // +2.5%
+      return {
+          type: 'INCREASE',
+          targetWeight: newWeight,
+          targetReps: exercise.reps,
+          reason: `RPE ${rpe} (Perfect Zone). Auto-Pilot Micro-loading +2.5%.`
+      };
+  }
+
+  // 4. Grind (RPE 9-10)
+  // Logic: Keep weight same next session to consolidate strength
+  return {
       type: 'MAINTAIN',
       targetWeight: topSet.weight,
-      targetReps: `${target}-${max}`,
-      reason: `Last time: ${topSet.reps} reps. Keep weight, aim for ${target}+ reps today.`
-    };
-  }
+      targetReps: exercise.reps,
+      reason: `RPE ${rpe} (Grind). Maintain weight to consolidate strength.`
+  };
 };
 
 export const analyzeSetPerformance = (exercise: Exercise, weight: number, reps: number): string => {
@@ -505,8 +555,6 @@ export const getSessionSummary = (session: SessionData): ReceiptData => {
         });
         
         // Check for PR (History vs Session)
-        // We look at ALL history for this exercise, excluding TODAY's logs that were just saved
-        // actually, simpler: find max weight in history BEFORE today.
         const logs = fullHistory[exId] as HistoryLog[] || [];
         const previousLogs = logs.filter(l => l.date !== today);
         
