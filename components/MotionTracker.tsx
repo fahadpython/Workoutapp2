@@ -65,28 +65,37 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       navigator.vibrate(pattern);
   };
 
-  const getPhaseHapticPattern = (action: string): number[] => {
+  const getPhaseHapticPattern = (action: string, duration: number): number[] => {
       const a = action.toUpperCase();
+      const ms = duration * 1000;
 
       // 1. ISOMETRIC / STATIC (Hold/Stretch/Pause) -> SILENCE
-      // User request: "no vibration for one"
-      // Distinguishes the hold phase by the sudden absence of vibration.
+      // Distinct absence of vibration tells user to HOLD.
       if (['HOLD', 'SQUEEZE', 'STRETCH', 'PAUSE', 'WAIT'].some(k => a.includes(k))) {
           return []; 
       }
 
-      // 2. ECCENTRIC (Lowering/Returning) -> HEARTBEAT
-      // User request: "heart beat ofr one"
-      // Pattern: Bump... Bump. (Lub-Dub)
+      // 2. ECCENTRIC (Lowering/Returning) -> LOOPING HEARTBEAT
+      // Pattern: Bump-Bump ... Bump-Bump ... (Metronome style)
+      // Keeps playing for the full duration of the negative phase.
       if (['LOWER', 'RELEASE', 'RETURN', 'DOWN', 'CONTROL', 'RESET'].some(k => a.includes(k))) {
-          // 80ms on, 160ms off, 80ms on
-          return [80, 160, 80];
+          const pattern: number[] = [];
+          let acc = 0;
+          // Create a beat approx every 1 second
+          while (acc < ms - 200) {
+              pattern.push(80);  // Lub
+              pattern.push(120); // gap
+              pattern.push(80);  // Dub
+              pattern.push(720); // Long gap
+              acc += 1000;
+          }
+          return pattern;
       }
 
       // 3. CONCENTRIC (Explosive/Drive) -> CONTINUOUS
-      // User request: "continuous vibration for one"
-      // Long solid buzz to signal "Work/Push"
-      return [800];
+      // Vibrate continuously for the entire duration of the phase.
+      // Signals "Work" or "Drive".
+      return [ms];
   };
 
   // --- LOGIC ---
@@ -99,7 +108,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
               setTimeout(() => {
                   speak("1"); triggerHaptic(50);
                   setTimeout(() => {
-                      speak("Go!"); triggerHaptic([800]); // Long buzz on start
+                      speak("Go!"); triggerHaptic([1000]); // Long buzz start
                       setIsActive(true);
                       
                       if (exercise.isTimed) {
@@ -159,8 +168,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       // Audio Cue
       if (phase.voiceCue) speak(phase.voiceCue);
       
-      // Haptic Cue
-      triggerHaptic(getPhaseHapticPattern(phase.action));
+      // Haptic Cue - Pass Duration for Continuous/Looping logic
+      triggerHaptic(getPhaseHapticPattern(phase.action, phase.duration));
   };
 
   const gameLoop = () => {
@@ -221,6 +230,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           stateRef.current.isPaused = true;
           cancelAnimationFrame(requestRef.current);
           if (exercise.isTimed) stopTimer();
+          // Stop vibration on pause
+          triggerHaptic(0);
       }
   };
 
