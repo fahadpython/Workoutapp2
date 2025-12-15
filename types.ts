@@ -5,6 +5,12 @@ export type ExerciseType = 'weighted' | 'cardio';
 
 export type MotionType = 'press' | 'pull' | 'hinge' | 'curl' | 'raise' | 'hold' | 'fly' | 'cardio' | 'squat';
 
+export interface UserProfile {
+  id: string;
+  name: string;
+  created: number;
+}
+
 export interface PacerPhase {
   action: string; // Display text: "Lower", "Press", "Pull"
   duration: number; // Seconds

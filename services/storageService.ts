@@ -1,13 +1,179 @@
 
-import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration } from '../types';
+import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile } from '../types';
 import { ALL_WORKOUTS } from '../constants';
 
-const KEYS = {
+// --- KEY MANAGEMENT SYSTEM ---
+
+const GLOBAL_KEYS = {
+  USERS_REGISTRY: 'iron_guide_users_registry',
+  ACTIVE_USER_ID: 'iron_guide_active_user_id',
+};
+
+// Base keys that will be prefixed with user ID
+const BASE_KEYS = {
   SESSION: 'iron_guide_session_v2',
   STATS: 'iron_guide_stats_v2',
   HISTORY: 'iron_guide_history_v2',
   CALIBRATION: 'iron_guide_calibration_v1',
 };
+
+// State to hold current user ID in memory
+let currentUserId: string | null = localStorage.getItem(GLOBAL_KEYS.ACTIVE_USER_ID);
+
+// Helper to get scoped key
+const getKey = (baseKey: string) => {
+  if (!currentUserId) return baseKey; // Fallback for legacy or error state
+  return `user_${currentUserId}_${baseKey}`;
+};
+
+// --- USER MANAGEMENT ---
+
+export const getUsers = (): UserProfile[] => {
+  const raw = localStorage.getItem(GLOBAL_KEYS.USERS_REGISTRY);
+  return raw ? JSON.parse(raw) : [];
+};
+
+export const createUser = (name: string): UserProfile => {
+  const users = getUsers();
+  const newUser: UserProfile = {
+    id: Date.now().toString(),
+    name,
+    created: Date.now()
+  };
+  users.push(newUser);
+  localStorage.setItem(GLOBAL_KEYS.USERS_REGISTRY, JSON.stringify(users));
+  return newUser;
+};
+
+export const switchUser = (userId: string) => {
+  currentUserId = userId;
+  localStorage.setItem(GLOBAL_KEYS.ACTIVE_USER_ID, userId);
+  // Reload page is often safest to reset all state hooks, but we can try to manage it via App state
+};
+
+export const getCurrentUser = (): UserProfile | null => {
+  if (!currentUserId) return null;
+  const users = getUsers();
+  return users.find(u => u.id === currentUserId) || null;
+};
+
+export const deleteUser = (userId: string) => {
+  // Remove registry entry
+  const users = getUsers().filter(u => u.id !== userId);
+  localStorage.setItem(GLOBAL_KEYS.USERS_REGISTRY, JSON.stringify(users));
+  
+  // Remove all prefixed keys
+  const prefix = `user_${userId}_`;
+  Object.keys(localStorage).forEach(key => {
+    if (key.startsWith(prefix)) {
+      localStorage.removeItem(key);
+    }
+  });
+
+  if (currentUserId === userId) {
+    currentUserId = null;
+    localStorage.removeItem(GLOBAL_KEYS.ACTIVE_USER_ID);
+  }
+};
+
+// --- LEGACY MIGRATION ---
+// Moves data from "root" keys to a new "Default User" if no users exist
+export const checkAndMigrateLegacyData = (): boolean => {
+  const users = getUsers();
+  if (users.length > 0) return false; // Already have users, no auto-migration
+
+  // Check if legacy data exists
+  const hasHistory = localStorage.getItem(BASE_KEYS.HISTORY);
+  const hasStats = localStorage.getItem(BASE_KEYS.STATS);
+
+  if (hasHistory || hasStats) {
+    // Create default user
+    const defaultUser = createUser("Default User");
+    currentUserId = defaultUser.id;
+    localStorage.setItem(GLOBAL_KEYS.ACTIVE_USER_ID, defaultUser.id);
+
+    // Helper to move key
+    const move = (baseKey: string) => {
+      const data = localStorage.getItem(baseKey);
+      if (data) {
+        localStorage.setItem(getKey(baseKey), data);
+        localStorage.removeItem(baseKey);
+      }
+    };
+
+    move(BASE_KEYS.SESSION);
+    move(BASE_KEYS.STATS);
+    move(BASE_KEYS.HISTORY);
+    move(BASE_KEYS.CALIBRATION);
+    return true; // Migration happened
+  }
+  return false;
+};
+
+// --- BACKUP & RESTORE ---
+
+export const exportUserData = () => {
+  if (!currentUserId) return null;
+  
+  const backup = {
+    userProfile: getCurrentUser(),
+    timestamp: Date.now(),
+    data: {
+      session: localStorage.getItem(getKey(BASE_KEYS.SESSION)),
+      stats: localStorage.getItem(getKey(BASE_KEYS.STATS)),
+      history: localStorage.getItem(getKey(BASE_KEYS.HISTORY)),
+      calibration: localStorage.getItem(getKey(BASE_KEYS.CALIBRATION)),
+    }
+  };
+
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup));
+  const downloadAnchorNode = document.createElement('a');
+  downloadAnchorNode.setAttribute("href", dataStr);
+  const date = new Date().toISOString().split('T')[0];
+  downloadAnchorNode.setAttribute("download", `ironguide_backup_${getCurrentUser()?.name}_${date}.json`);
+  document.body.appendChild(downloadAnchorNode);
+  downloadAnchorNode.click();
+  downloadAnchorNode.remove();
+};
+
+export const importUserData = async (file: File): Promise<boolean> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        
+        // Basic validation
+        if (!json.userProfile || !json.data) {
+          alert("Invalid backup file format.");
+          return resolve(false);
+        }
+
+        // Determine target user ID (Current active user)
+        if (!currentUserId) {
+           alert("Please log in to a user before restoring.");
+           return resolve(false);
+        }
+
+        // Restore Data keys to CURRENT user (overwriting)
+        if (json.data.session) localStorage.setItem(getKey(BASE_KEYS.SESSION), json.data.session);
+        if (json.data.stats) localStorage.setItem(getKey(BASE_KEYS.STATS), json.data.stats);
+        if (json.data.history) localStorage.setItem(getKey(BASE_KEYS.HISTORY), json.data.history);
+        if (json.data.calibration) localStorage.setItem(getKey(BASE_KEYS.CALIBRATION), json.data.calibration);
+
+        resolve(true);
+      } catch (e) {
+        console.error(e);
+        alert("Failed to parse backup file.");
+        resolve(false);
+      }
+    };
+    reader.readAsText(file);
+  });
+};
+
+
+// --- CORE STORAGE FUNCTIONS (Updated to use getKey) ---
 
 // Dynamically aggregate all exercises from the new schedule
 const ALL_EXERCISES = ALL_WORKOUTS.flatMap(day => day.exercises);
@@ -15,24 +181,25 @@ const ALL_EXERCISES = ALL_WORKOUTS.flatMap(day => day.exercises);
 export const getTodayString = () => new Date().toISOString().split('T')[0];
 
 export const saveSession = (session: SessionData | null) => {
+  const key = getKey(BASE_KEYS.SESSION);
   if (session) {
-    localStorage.setItem(KEYS.SESSION, JSON.stringify(session));
+    localStorage.setItem(key, JSON.stringify(session));
   } else {
-    localStorage.removeItem(KEYS.SESSION);
+    localStorage.removeItem(key);
   }
 };
 
 export const loadSession = (): SessionData | null => {
-  const data = localStorage.getItem(KEYS.SESSION);
+  const data = localStorage.getItem(getKey(BASE_KEYS.SESSION));
   return data ? JSON.parse(data) : null;
 };
 
 export const saveUserStats = (stats: UserStats) => {
-  localStorage.setItem(KEYS.STATS, JSON.stringify(stats));
+  localStorage.setItem(getKey(BASE_KEYS.STATS), JSON.stringify(stats));
 };
 
 export const loadUserStats = (): UserStats => {
-  const data = localStorage.getItem(KEYS.STATS);
+  const data = localStorage.getItem(getKey(BASE_KEYS.STATS));
   const defaultStats: UserStats = {
     bodyWeight: 0,
     waterIntake: 0,
@@ -83,7 +250,8 @@ export const calculateCalories = (metric1: number, metric2: number, metValue: nu
 // --- History Management ---
 
 export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number, rpe?: number) => {
-  const historyRaw = localStorage.getItem(KEYS.HISTORY);
+  const key = getKey(BASE_KEYS.HISTORY);
+  const historyRaw = localStorage.getItem(key);
   const history = historyRaw ? JSON.parse(historyRaw) : {};
   
   if (!history[exerciseId]) history[exerciseId] = [];
@@ -99,11 +267,11 @@ export const saveExerciseLog = (exerciseId: string, weight: number, reps: number
   // Append new log
   history[exerciseId].push(newLog);
   
-  localStorage.setItem(KEYS.HISTORY, JSON.stringify(history));
+  localStorage.setItem(key, JSON.stringify(history));
 };
 
 export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null => {
-  const historyRaw = localStorage.getItem(KEYS.HISTORY);
+  const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   if (!historyRaw) return null;
   
   const fullHistory = JSON.parse(historyRaw);
@@ -141,7 +309,7 @@ export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null =
 };
 
 export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommendation: string | null } => {
-  const historyRaw = localStorage.getItem(KEYS.HISTORY);
+  const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   if (!historyRaw) return { isStalled: false, recommendation: null };
   
   const fullHistory = JSON.parse(historyRaw);
@@ -191,24 +359,28 @@ export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommen
 };
 
 export const clearAllData = () => {
-  localStorage.removeItem(KEYS.SESSION);
-  localStorage.removeItem(KEYS.STATS);
-  localStorage.removeItem(KEYS.HISTORY);
-  localStorage.removeItem(KEYS.CALIBRATION);
+  // Only clear current user data
+  if (currentUserId) {
+      localStorage.removeItem(getKey(BASE_KEYS.SESSION));
+      localStorage.removeItem(getKey(BASE_KEYS.STATS));
+      localStorage.removeItem(getKey(BASE_KEYS.HISTORY));
+      localStorage.removeItem(getKey(BASE_KEYS.CALIBRATION));
+  }
   window.location.reload();
 };
 
 // --- Calibration Logic ---
 
 export const saveCalibration = (data: MotionCalibration) => {
-  const raw = localStorage.getItem(KEYS.CALIBRATION);
+  const key = getKey(BASE_KEYS.CALIBRATION);
+  const raw = localStorage.getItem(key);
   const db = raw ? JSON.parse(raw) : {};
   db[data.exerciseId] = data;
-  localStorage.setItem(KEYS.CALIBRATION, JSON.stringify(db));
+  localStorage.setItem(key, JSON.stringify(db));
 };
 
 export const getCalibration = (exerciseId: string): MotionCalibration | null => {
-  const raw = localStorage.getItem(KEYS.CALIBRATION);
+  const raw = localStorage.getItem(getKey(BASE_KEYS.CALIBRATION));
   if (!raw) return null;
   const db = JSON.parse(raw);
   return db[exerciseId] || null;
@@ -217,7 +389,7 @@ export const getCalibration = (exerciseId: string): MotionCalibration | null => 
 // --- Analytics ---
 
 export const getDashboardStats = (): DashboardStats => {
-  const historyRaw = localStorage.getItem(KEYS.HISTORY);
+  const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
   
   // 1. Weekly Volume
@@ -300,30 +472,50 @@ export const getDashboardStats = (): DashboardStats => {
 
 const mapMuscleToKey = (detailedName: string): string => {
     const n = detailedName.toLowerCase();
-    if (n.includes('chest')) return 'chest';
-    if (n.includes('lat') || n.includes('back')) return 'back';
-    if (n.includes('shoulder') || n.includes('delt')) return 'shoulders';
-    if (n.includes('tricep')) return 'triceps';
-    if (n.includes('bicep') || n.includes('brach')) return 'biceps';
-    if (n.includes('abs') || n.includes('core') || n.includes('oblique')) return 'abs';
-    if (n.includes('quad') || n.includes('thigh')) return 'quads';
-    if (n.includes('ham') || n.includes('glute')) return 'hams_glutes';
-    if (n.includes('calf') || n.includes('soleus')) return 'calves';
-    return '';
+    
+    // --- CHEST ---
+    if (n.includes('upper chest')) return 'chest_upper';
+    if (n.includes('lower chest') || n.includes('costal') || n.includes('mid chest') || n.includes('inner chest') || n.includes('chest')) return 'chest_lower';
+    
+    // --- SHOULDERS ---
+    if (n.includes('front delt')) return 'shoulders_front';
+    if (n.includes('side delt')) return 'shoulders_side';
+    if (n.includes('rear delt')) return 'shoulders_rear';
+    if (n.includes('shoulder')) return 'shoulders_front'; // Default fallback
+    
+    // --- BACK ---
+    if (n.includes('lat')) return 'lats';
+    if (n.includes('lower back') || n.includes('erector')) return 'back_lower';
+    if (n.includes('trap')) return 'traps';
+    if (n.includes('upper back') || n.includes('mid back') || n.includes('rhomboid') || n.includes('teres') || n.includes('back')) return 'back_upper';
+    
+    // --- ARMS ---
+    if (n.includes('long head triceps') || n.includes('tricep')) return 'triceps';
+    if (n.includes('bicep') || n.includes('brachialis')) return 'biceps';
+    if (n.includes('forearm') || n.includes('wrist') || n.includes('brachioradialis')) return 'forearms';
+    
+    // --- CORE ---
+    if (n.includes('oblique')) return 'obliques';
+    if (n.includes('abs') || n.includes('core')) return 'abs';
+    
+    // --- LEGS ---
+    if (n.includes('quad')) return 'quads';
+    if (n.includes('hamstring')) return 'hamstrings';
+    if (n.includes('glute')) return 'glutes';
+    if (n.includes('calf') || n.includes('soleus') || n.includes('gastro')) return 'calves';
+    
+    return 'other';
 };
 
-export const getMuscleHeatmapData = (): Record<string, number> => {
-    const historyRaw = localStorage.getItem(KEYS.HISTORY);
+export const getMuscleHeatmapData = (): Record<string, { hours: number; volume: number }> => {
+    const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
     const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
     
-    const lastTrainedHours: Record<string, number> = {
-        chest: Infinity, back: Infinity, shoulders: Infinity,
-        triceps: Infinity, biceps: Infinity, abs: Infinity,
-        quads: Infinity, hams_glutes: Infinity, calves: Infinity
-    };
+    // Store last log time (ms) and weekly volume (kg)
+    const muscleStats: Record<string, { lastLog: number, volume: number }> = {};
     
-    const today = new Date();
-    today.setHours(0,0,0,0); // Midnight comparison for day granularity
+    const now = Date.now();
+    const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
 
     Object.keys(fullHistory).forEach(exId => {
         const logs = fullHistory[exId] as HistoryLog[];
@@ -334,25 +526,62 @@ export const getMuscleHeatmapData = (): Record<string, number> => {
         
         // Sort logs desc
         const sortedLogs = logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        const lastLogDateStr = sortedLogs[0].date;
-        const lastLogDate = new Date(lastLogDateStr);
-        lastLogDate.setHours(0,0,0,0);
         
-        const diffDays = (today.getTime() - lastLogDate.getTime()) / (1000 * 60 * 60 * 24);
-        const diffHours = diffDays * 24; // Approximation is fine, we care about <24, 24-48, etc.
-        
-        // Update muscles hit by this exercise
-        Object.keys(exDef.muscleSplit).forEach(mName => {
-            if ((exDef.muscleSplit![mName] || 0) > 30) { // Only count if muscle involvement > 30%
+        // Check all logs for volume calculation within last week
+        sortedLogs.forEach(log => {
+            const logDate = new Date(log.date);
+            const logTime = logDate.getTime();
+            
+            // Iterate over all muscles involved in this exercise
+            Object.keys(exDef.muscleSplit!).forEach(mName => {
+                const percentage = exDef.muscleSplit![mName] || 0;
+                if (percentage < 10) return; // Ignore minimal stabilizers
+
                 const key = mapMuscleToKey(mName);
-                if (key && diffHours < lastTrainedHours[key]) {
-                    lastTrainedHours[key] = diffHours;
+                if (key === 'other') return;
+
+                if (!muscleStats[key]) muscleStats[key] = { lastLog: 0, volume: 0 };
+
+                // Update Last Trained Time (if this log is more recent)
+                if (logTime > muscleStats[key].lastLog) {
+                    muscleStats[key].lastLog = logTime;
                 }
-            }
+
+                // Add Volume if within last 7 days
+                if (logTime > oneWeekAgo) {
+                    // Volume = Weight * Reps * Sets(1) * Participation %
+                    // Note: This iterates per set log in history, so we just add it up
+                    const setVol = log.weight * log.reps * (percentage / 100);
+                    muscleStats[key].volume += setVol;
+                }
+            });
         });
     });
     
-    return lastTrainedHours;
+    // Convert to final format
+    const result: Record<string, { hours: number; volume: number }> = {};
+    
+    // Set defaults for common groups so they aren't undefined
+    const commonKeys = [
+        'chest_upper', 'chest_lower', 'shoulders_front', 'shoulders_side', 'shoulders_rear',
+        'lats', 'back_upper', 'back_lower', 'traps', 
+        'biceps', 'triceps', 'forearms', 
+        'abs', 'obliques', 
+        'quads', 'hamstrings', 'glutes', 'calves'
+    ];
+    
+    commonKeys.forEach(k => {
+        if (muscleStats[k]) {
+            const diffMs = now - muscleStats[k].lastLog;
+            // If never trained (lastLog=0), diff is huge.
+            const hours = muscleStats[k].lastLog === 0 ? Infinity : diffMs / (1000 * 60 * 60);
+            result[k] = { hours, volume: Math.round(muscleStats[k].volume) };
+        } else {
+            result[k] = { hours: Infinity, volume: 0 };
+        }
+    });
+    
+    return result;
 };
 
 export const getCreatineStats = (history: string[]) => {
@@ -509,7 +738,7 @@ const MOTIVATIONAL_QUOTES = [
 ];
 
 export const getSessionSummary = (session: SessionData): ReceiptData => {
-    const historyRaw = localStorage.getItem(KEYS.HISTORY);
+    const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
     const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
     
     // Calculate Duration
