@@ -61,30 +61,32 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       if (!isHapticsEnabled || !navigator.vibrate) return;
       // Stop any existing vibration before starting new one
       navigator.vibrate(0);
+      if (Array.isArray(pattern) && pattern.length === 0) return; // Silent
       navigator.vibrate(pattern);
   };
 
   const getPhaseHapticPattern = (action: string): number[] => {
       const a = action.toUpperCase();
 
-      // 1. ISOMETRIC (Holds/Squeezes/Stretches) -> "Rapid Flutter"
-      // Feels like tension or shaking. Distinguishable from movement.
-      if (['HOLD', 'SQUEEZE', 'STRETCH', 'PAUSE'].some(k => a.includes(k))) {
-          // 50ms on, 50ms off, repeat 4 times
-          return [50, 50, 50, 50, 50, 50, 50, 50]; 
+      // 1. ISOMETRIC / STATIC (Hold/Stretch/Pause) -> SILENCE
+      // User request: "no vibration for one"
+      // Distinguishes the hold phase by the sudden absence of vibration.
+      if (['HOLD', 'SQUEEZE', 'STRETCH', 'PAUSE', 'WAIT'].some(k => a.includes(k))) {
+          return []; 
       }
 
-      // 2. ECCENTRIC (Lowering/Returning) -> "Double Thump" (Heartbeat)
-      // Feels like a controlled metronome. "Bump-Bump".
+      // 2. ECCENTRIC (Lowering/Returning) -> HEARTBEAT
+      // User request: "heart beat ofr one"
+      // Pattern: Bump... Bump. (Lub-Dub)
       if (['LOWER', 'RELEASE', 'RETURN', 'DOWN', 'CONTROL', 'RESET'].some(k => a.includes(k))) {
-          // 200ms on, 100ms off, 200ms on
-          return [200, 100, 200];
+          // 80ms on, 160ms off, 80ms on
+          return [80, 160, 80];
       }
 
-      // 3. CONCENTRIC (Explosive/Drive) -> "Solid Drive" (One Long Buzz)
-      // Feels like power. One distinct long vibration.
-      // Default for Press, Pull, Drive, Curl, Up, etc.
-      return [400];
+      // 3. CONCENTRIC (Explosive/Drive) -> CONTINUOUS
+      // User request: "continuous vibration for one"
+      // Long solid buzz to signal "Work/Push"
+      return [800];
   };
 
   // --- LOGIC ---
@@ -97,7 +99,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
               setTimeout(() => {
                   speak("1"); triggerHaptic(50);
                   setTimeout(() => {
-                      speak("Go!"); triggerHaptic([100, 50, 400]); // Startup buzz
+                      speak("Go!"); triggerHaptic([800]); // Long buzz on start
                       setIsActive(true);
                       
                       if (exercise.isTimed) {
@@ -157,7 +159,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       // Audio Cue
       if (phase.voiceCue) speak(phase.voiceCue);
       
-      // Smart Haptic Cue based on Action Type
+      // Haptic Cue
       triggerHaptic(getPhaseHapticPattern(phase.action));
   };
 
@@ -184,9 +186,9 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                       const n = prev + 1;
                       onRepCount(n);
                       speak(String(n));
-                      // Rep Complete: Distinct "Success" pattern
-                      // Three rising pulses
-                      triggerHaptic([100, 50, 100, 50, 200]); 
+                      // Rep Complete: Success Triple-Beat
+                      // 100on, 80off, 100on, 80off, 300on
+                      triggerHaptic([100, 80, 100, 80, 300]); 
                       return n;
                   });
               }
@@ -276,7 +278,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                     onClick={() => { 
                         const newState = !isHapticsEnabled;
                         setIsHapticsEnabled(newState); 
-                        if(newState) triggerHaptic([50, 50, 200]); // Confirmation buzz
+                        if(newState) triggerHaptic([80, 80]); // Toggle buzz
                     }} 
                     className={`p-2 rounded-full transition-colors ${isHapticsEnabled ? 'text-white bg-gym-700' : 'text-gray-600 hover:text-gray-400'}`}
                     title={isHapticsEnabled ? "Vibration ON" : "Vibration OFF"}
@@ -370,10 +372,10 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                    
                    {/* HAPTIC LEGEND (Visual Feedback) */}
                    {isHapticsEnabled && (
-                       <p className="absolute bottom-24 text-[10px] text-gray-500 uppercase font-mono tracking-widest animate-pulse">
-                           {['HOLD','SQUEEZE','STRETCH'].some(k=>currentPhase.action.includes(k)) ? '~~~ FLUTTER ~~~' : 
-                            ['LOWER','DOWN','RETURN'].some(k=>currentPhase.action.includes(k)) ? '• • DOUBLE BEAT' : 
-                            '— SOLID DRIVE —'}
+                       <p className="absolute bottom-24 text-[10px] text-gray-500 uppercase font-mono tracking-widest animate-pulse w-full text-center">
+                           {['HOLD','SQUEEZE','STRETCH'].some(k=>currentPhase.action.includes(k)) ? '∅ SILENCE (HOLD)' : 
+                            ['LOWER','DOWN','RETURN'].some(k=>currentPhase.action.includes(k)) ? '♥ HEARTBEAT (CONTROL)' : 
+                            '〰 CONTINUOUS (DRIVE)'}
                        </p>
                    )}
                </>
