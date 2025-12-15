@@ -321,6 +321,7 @@ const App: React.FC = () => {
             completedSets={currentSession.completedExercises[activeExercise.id] || []}
             onLogSet={handleLogSet}
             onBack={handleBackToWorkoutList}
+            onUpdateWater={updateWater} // Pass the hydration function
           />
         ) : activePlan ? (
           <WorkoutView 

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { WorkoutDay, SessionData, ExerciseType, MuscleGroup, Exercise, MotionType, PacerConfig } from '../types';
 import { CheckCircle, ChevronRight, Layers, PlusCircle, Footprints, Dumbbell, Activity, Eye, Zap, Wrench, RefreshCw, Star, Flame } from 'lucide-react';

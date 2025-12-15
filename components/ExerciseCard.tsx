@@ -6,12 +6,14 @@ import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
+import WaterReminder from './WaterReminder';
 
 interface Props {
   exercise: Exercise;
   completedSets: SetLog[];
   onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean, rpe?: number) => void;
   onBack: () => void;
+  onUpdateWater: (amount: number) => void;
 }
 
 // --- SUB-COMPONENT: PYRAMID CALCULATOR ---
@@ -308,7 +310,8 @@ const ExerciseCard: React.FC<Props> = ({
   exercise, 
   completedSets, 
   onLogSet,
-  onBack
+  onBack,
+  onUpdateWater
 }) => {
   const [history, setHistory] = useState<ExerciseHistory | null>(null);
   const [metric1, setMetric1] = useState<string>(''); // Weight or Distance
@@ -326,6 +329,11 @@ const ExerciseCard: React.FC<Props> = ({
   const [showLeveler, setShowLeveler] = useState(false);
   const [showMotionTracker, setShowMotionTracker] = useState(false);
   const [bestHistorical1RM, setBestHistorical1RM] = useState(0);
+  
+  // Hydration State
+  const [waterDebt, setWaterDebt] = useState(0);
+  const [showWaterReminder, setShowWaterReminder] = useState(false);
+  const [waterReminderAmount, setWaterReminderAmount] = useState(0);
 
   const isCardio = exercise.type === 'cardio';
   // If it's timed (like Plank), treat metric2 as Time
@@ -376,6 +384,25 @@ const ExerciseCard: React.FC<Props> = ({
       return match ? parseInt(match[0]) : 10;
   };
 
+  const calculateWaterLoss = (m1: number, m2: number) => {
+      // Heuristic for sweat loss
+      // Base: Weight * Reps * Factor
+      // Compound Factor: 1.5x
+      // Cardio: m2 (mins) * 10
+      
+      let loss = 0;
+      if (isCardio) {
+          loss = m2 * 10; // 10ml per min of cardio
+      } else {
+          // Weight * Reps * 0.04 (approx 40ml for 1000kg vol)
+          // Compound multiplier
+          const vol = m1 * m2;
+          const compoundMult = exercise.isCompound ? 1.5 : 1.0;
+          loss = vol * 0.04 * compoundMult;
+      }
+      return Math.round(loss);
+  };
+
   const handleFinishSet = () => {
     // If it's a warmup, we might bypass inputs
     let m1 = parseFloat(metric1) || 0;
@@ -385,6 +412,19 @@ const ExerciseCard: React.FC<Props> = ({
     if (exercise.isWarmup) {
         m1 = 0; // Bodyweight/Warmup
         m2 = getTargetRepsInt(); 
+    }
+
+    // --- HYDRATION LOGIC ---
+    if (!exercise.isWarmup) {
+        const loss = calculateWaterLoss(m1, m2);
+        const newDebt = waterDebt + loss;
+        setWaterDebt(newDebt);
+
+        // Thresholds: Sip (>60ml), Gulp (>150ml)
+        if (newDebt > 120) {
+            setWaterReminderAmount(Math.ceil(newDebt / 50) * 50); // Round to nearest 50
+            setShowWaterReminder(true);
+        }
     }
 
     const isDrop = setMode === 1;
@@ -509,6 +549,24 @@ const ExerciseCard: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {/* --- WATER REMINDER MODAL --- */}
+      {showWaterReminder && (
+          <WaterReminder 
+              amount={waterReminderAmount}
+              reason={`Based on ${completedSets.length} sets of work.`}
+              onLog={() => { 
+                  onUpdateWater(waterReminderAmount); 
+                  setWaterDebt(0); 
+                  setShowWaterReminder(false); 
+              }}
+              onSkip={() => {
+                  // Keep half the debt so it reminds sooner next time, but doesn't nag instantly
+                  setWaterDebt(prev => prev / 2);
+                  setShowWaterReminder(false);
+              }}
+          />
+      )}
 
       {/* --- LEVELER MODAL --- */}
       {showLeveler && exercise.benchAngle !== undefined && (

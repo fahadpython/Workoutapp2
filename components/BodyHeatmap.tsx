@@ -86,7 +86,7 @@ const BodyHeatmap: React.FC<Props> = ({ recoveryStatus }) => {
       calves: "Calves"
   };
 
-  const MusclePath = ({ id, path }: { id: string, path: string }) => {
+  const MusclePath: React.FC<{ id: string; path: string }> = ({ id, path }) => {
       const data = recoveryStatus[id] || { hours: Infinity, volume: 0 };
       const isSelected = selectedMuscle === id;
       
