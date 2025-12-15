@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Pause, Volume2, VolumeX, Wind, RotateCcw } from 'lucide-react';
+import { X, Play, Pause, Volume2, VolumeX, Wind, RotateCcw, Smartphone, Waves } from 'lucide-react';
 import { Exercise, PacerPhase } from '../types';
 
 interface Props {
@@ -18,6 +18,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   const [phaseTimeLeft, setPhaseTimeLeft] = useState(0); // Seconds
   const [isMuted, setIsMuted] = useState(false);
+  const [isHapticsEnabled, setIsHapticsEnabled] = useState(true); // Default to on
   const [timerSeconds, setTimerSeconds] = useState(0); // For timed exercises
 
   // --- REFS ---
@@ -46,7 +47,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     };
   }, []);
 
-  // --- AUDIO ---
+  // --- AUDIO & HAPTICS ---
   const speak = (text: string) => {
     if (isMuted || !synthRef.current) return;
     synthRef.current.cancel();
@@ -56,21 +57,57 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     synthRef.current.speak(u);
   };
 
+  const triggerHaptic = (pattern: number | number[]) => {
+      if (!isHapticsEnabled || !navigator.vibrate) return;
+      // Stop any existing vibration before starting new one
+      navigator.vibrate(0);
+      navigator.vibrate(pattern);
+  };
+
+  const getPhaseHapticPattern = (action: string): number[] => {
+      const a = action.toUpperCase();
+
+      // 1. ISOMETRIC (Holds/Squeezes/Stretches) -> "Rapid Flutter"
+      // Feels like tension or shaking. Distinguishable from movement.
+      if (['HOLD', 'SQUEEZE', 'STRETCH', 'PAUSE'].some(k => a.includes(k))) {
+          // 50ms on, 50ms off, repeat 4 times
+          return [50, 50, 50, 50, 50, 50, 50, 50]; 
+      }
+
+      // 2. ECCENTRIC (Lowering/Returning) -> "Double Thump" (Heartbeat)
+      // Feels like a controlled metronome. "Bump-Bump".
+      if (['LOWER', 'RELEASE', 'RETURN', 'DOWN', 'CONTROL', 'RESET'].some(k => a.includes(k))) {
+          // 200ms on, 100ms off, 200ms on
+          return [200, 100, 200];
+      }
+
+      // 3. CONCENTRIC (Explosive/Drive) -> "Solid Drive" (One Long Buzz)
+      // Feels like power. One distinct long vibration.
+      // Default for Press, Pull, Drive, Curl, Up, etc.
+      return [400];
+  };
+
   // --- LOGIC ---
   const startCountdown = () => {
       speak("Get Ready.");
       setTimeout(() => {
-          speak("3... 2... 1...");
+          speak("3"); triggerHaptic(50);
           setTimeout(() => {
-              speak("Go!");
-              setIsActive(true);
-              
-              if (exercise.isTimed) {
-                  startTimer();
-              } else {
-                  startPacer();
-              }
-          }, 3000);
+              speak("2"); triggerHaptic(50);
+              setTimeout(() => {
+                  speak("1"); triggerHaptic(50);
+                  setTimeout(() => {
+                      speak("Go!"); triggerHaptic([100, 50, 400]); // Startup buzz
+                      setIsActive(true);
+                      
+                      if (exercise.isTimed) {
+                          startTimer();
+                      } else {
+                          startPacer();
+                      }
+                  }, 1000);
+              }, 1000);
+          }, 1000);
       }, 1000);
   };
 
@@ -115,11 +152,13 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       stateRef.current.phaseDuration = phase.duration * 1000;
       
       setCurrentPhaseIndex(idx);
-      // setPhaseTimeLeft(phase.duration); // Loop updates this immediately anyway
       phaseStartTimeRef.current = Date.now();
 
       // Audio Cue
       if (phase.voiceCue) speak(phase.voiceCue);
+      
+      // Smart Haptic Cue based on Action Type
+      triggerHaptic(getPhaseHapticPattern(phase.action));
   };
 
   const gameLoop = () => {
@@ -145,6 +184,9 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                       const n = prev + 1;
                       onRepCount(n);
                       speak(String(n));
+                      // Rep Complete: Distinct "Success" pattern
+                      // Three rising pulses
+                      triggerHaptic([100, 50, 100, 50, 200]); 
                       return n;
                   });
               }
@@ -229,11 +271,26 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                 <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
                 <p className="text-xs text-gym-accent font-mono tracking-widest">{exercise.isTimed ? 'TIMER MODE' : 'PACER MODE'}</p>
             </div>
-            <div className="flex gap-4">
-                <button onClick={() => setIsMuted(!isMuted)} className="text-gray-400 hover:text-white transition-colors">
-                    {isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}
+            <div className="flex gap-3">
+                <button 
+                    onClick={() => { 
+                        const newState = !isHapticsEnabled;
+                        setIsHapticsEnabled(newState); 
+                        if(newState) triggerHaptic([50, 50, 200]); // Confirmation buzz
+                    }} 
+                    className={`p-2 rounded-full transition-colors ${isHapticsEnabled ? 'text-white bg-gym-700' : 'text-gray-600 hover:text-gray-400'}`}
+                    title={isHapticsEnabled ? "Vibration ON" : "Vibration OFF"}
+                >
+                    <Waves size={20} className={isHapticsEnabled ? "animate-pulse" : ""}/>
                 </button>
-                <button onClick={onClose} className="p-2 bg-gym-700 rounded-full text-white hover:bg-gym-600 transition-colors"><X size={20}/></button>
+                <button 
+                    onClick={() => setIsMuted(!isMuted)} 
+                    className={`p-2 rounded-full transition-colors ${!isMuted ? 'text-white bg-gym-700' : 'text-gray-600 hover:text-gray-400'}`}
+                    title="Toggle Audio"
+                >
+                    {isMuted ? <VolumeX size={20}/> : <Volume2 size={20}/>}
+                </button>
+                <button onClick={onClose} className="p-2 bg-gym-700 rounded-full text-white hover:bg-gym-600 transition-colors ml-2"><X size={20}/></button>
             </div>
        </div>
 
@@ -310,6 +367,15 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                            {isPaused ? <Play size={48} fill="currentColor" /> : <Pause size={48} fill="currentColor" />}
                        </button>
                    </div>
+                   
+                   {/* HAPTIC LEGEND (Visual Feedback) */}
+                   {isHapticsEnabled && (
+                       <p className="absolute bottom-24 text-[10px] text-gray-500 uppercase font-mono tracking-widest animate-pulse">
+                           {['HOLD','SQUEEZE','STRETCH'].some(k=>currentPhase.action.includes(k)) ? '~~~ FLUTTER ~~~' : 
+                            ['LOWER','DOWN','RETURN'].some(k=>currentPhase.action.includes(k)) ? '• • DOUBLE BEAT' : 
+                            '— SOLID DRIVE —'}
+                       </p>
+                   )}
                </>
            )}
        </div>
