@@ -18,11 +18,12 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   const [phaseTimeLeft, setPhaseTimeLeft] = useState(0); // Seconds
   const [isMuted, setIsMuted] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0); // For timed exercises
 
   // --- REFS ---
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const requestRef = useRef<number>(0);
-  const lastTickRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseStartTimeRef = useRef(0);
   
   // Mutable state for the loop to access without closures
@@ -38,7 +39,11 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     
     startCountdown();
 
-    return () => cancelAnimationFrame(requestRef.current);
+    return () => {
+        cancelAnimationFrame(requestRef.current);
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (synthRef.current) synthRef.current.cancel();
+    };
   }, []);
 
   // --- AUDIO ---
@@ -59,11 +64,36 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           setTimeout(() => {
               speak("Go!");
               setIsActive(true);
-              startPacer();
+              
+              if (exercise.isTimed) {
+                  startTimer();
+              } else {
+                  startPacer();
+              }
           }, 3000);
       }, 1000);
   };
 
+  // --- TIMED EXERCISE LOGIC ---
+  const startTimer = () => {
+      setIsPaused(false);
+      setTimerSeconds(0);
+      
+      timerRef.current = setInterval(() => {
+          setTimerSeconds(prev => prev + 1);
+          // Optional: Speak every 10s
+          // if ((prev + 1) % 10 === 0) speak(String(prev + 1));
+      }, 1000);
+
+      // Start the breathing pacer in background just for visuals
+      startPacer();
+  };
+
+  const stopTimer = () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  // --- PACER LOGIC ---
   const startPacer = () => {
     if (exercise.pacer.phases.length === 0) return;
     
@@ -87,7 +117,6 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       setCurrentPhaseIndex(idx);
       // setPhaseTimeLeft(phase.duration); // Loop updates this immediately anyway
       phaseStartTimeRef.current = Date.now();
-      lastTickRef.current = phase.duration;
 
       // Audio Cue
       if (phase.voiceCue) speak(phase.voiceCue);
@@ -104,25 +133,21 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       
       setPhaseTimeLeft(remainingSec);
 
-      // Audio Ticks for countdown (optional, can be annoying if too frequent)
-      // const secCeil = Math.ceil(remainingSec);
-      // if (secCeil < lastTickRef.current && secCeil > 0) {
-      //    lastTickRef.current = secCeil;
-      // }
-
       // Phase Complete
       if (remainingMs <= 0) {
           const phases = exercise.pacer.phases;
           const nextIdx = stateRef.current.phaseIdx + 1;
 
           if (nextIdx >= phases.length) {
-              // REP COMPLETE
-              setReps(prev => {
-                  const n = prev + 1;
-                  onRepCount(n);
-                  speak(String(n));
-                  return n;
-              });
+              // REP COMPLETE (Only count if NOT timed)
+              if (!exercise.isTimed) {
+                  setReps(prev => {
+                      const n = prev + 1;
+                      onRepCount(n);
+                      speak(String(n));
+                      return n;
+                  });
+              }
               runPhase(0);
           } else {
               // NEXT PHASE
@@ -144,23 +169,35 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           phaseStartTimeRef.current = Date.now() - (duration - remainingMs);
           
           requestRef.current = requestAnimationFrame(gameLoop);
+          if (exercise.isTimed) startTimer();
+
       } else {
           // PAUSE
           setIsPaused(true);
           stateRef.current.isPaused = true;
           cancelAnimationFrame(requestRef.current);
+          if (exercise.isTimed) stopTimer();
       }
   };
 
   const resetPacer = () => {
       setReps(0);
+      setTimerSeconds(0);
       onRepCount(0);
       runPhase(0);
       if (isPaused) togglePause();
   };
 
+  const handleFinish = () => {
+      // If timed, we use the timer value as the 'reps' (seconds)
+      if (exercise.isTimed) {
+          onRepCount(timerSeconds);
+      }
+      onClose();
+  };
+
   // --- RENDER HELPERS ---
-  const currentPhase = exercise.pacer.phases[currentPhaseIndex] || { action: 'Ready', breathing: 'Hold', duration: 1 };
+  const currentPhase = exercise.pacer.phases[currentPhaseIndex] || { action: 'Ready', breathing: 'Hold', duration: 1, voiceCue: '' };
   
   const getPhaseColor = (p: PacerPhase) => {
     switch (p.breathing) {
@@ -178,13 +215,19 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     }
   };
 
+  const formatTimer = (sec: number) => {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${s<10?'0':''}${s}`;
+  }
+
   return (
     <div className="fixed inset-0 z-[60] bg-gym-900 flex flex-col animate-in fade-in duration-300">
        {/* HEADER */}
        <div className="p-4 flex justify-between items-center border-b border-gym-700 bg-gym-800">
             <div>
                 <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
-                <p className="text-xs text-gym-accent font-mono tracking-widest">PACER MODE</p>
+                <p className="text-xs text-gym-accent font-mono tracking-widest">{exercise.isTimed ? 'TIMER MODE' : 'PACER MODE'}</p>
             </div>
             <div className="flex gap-4">
                 <button onClick={() => setIsMuted(!isMuted)} className="text-gray-400 hover:text-white transition-colors">
@@ -209,20 +252,29 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                        {/* Outer Ring & Content */}
                        <div className={`w-72 h-72 rounded-full border-8 flex flex-col items-center justify-center transition-all duration-300 ${getPhaseColor(currentPhase)} ${getPhaseBg(currentPhase)}`}>
                            
-                           {/* Phase Name */}
-                           <h2 className="text-5xl font-black uppercase italic tracking-tighter text-white drop-shadow-xl mb-3 animate-in slide-in-from-bottom-2 duration-300 key={currentPhase.action}">
-                               {currentPhase.action}
-                           </h2>
+                           {/* Phase Name or Timer */}
+                           {exercise.isTimed ? (
+                               <div className="text-center">
+                                   <p className="text-xs text-gray-400 font-bold uppercase mb-2">Duration</p>
+                                   <h2 className="text-6xl font-black tracking-tighter text-white drop-shadow-xl font-mono">
+                                       {formatTimer(timerSeconds)}
+                                   </h2>
+                               </div>
+                           ) : (
+                               <h2 className="text-5xl font-black uppercase italic tracking-tighter text-white drop-shadow-xl mb-3 animate-in slide-in-from-bottom-2 duration-300 key={currentPhase.action}">
+                                   {currentPhase.action}
+                               </h2>
+                           )}
                            
                            {/* Breathing Cue */}
-                           <div className="flex items-center gap-2 px-4 py-1.5 bg-black/40 rounded-full backdrop-blur-md mb-2">
+                           <div className="flex items-center gap-2 px-4 py-1.5 bg-black/40 rounded-full backdrop-blur-md mt-4">
                                <Wind size={18} className="text-white" />
                                <span className="text-sm font-bold text-white uppercase tracking-widest">{currentPhase.breathing}</span>
                            </div>
 
-                           {/* Countdown Timer */}
-                           <p className="text-7xl font-mono font-bold text-white/40 absolute -bottom-24 tabular-nums">
-                               {phaseTimeLeft.toFixed(1)}<span className="text-lg">s</span>
+                           {/* Countdown Timer (only for reps mode or breathing cues) */}
+                           <p className="text-2xl font-mono font-bold text-white/40 absolute -bottom-12 tabular-nums">
+                               {phaseTimeLeft.toFixed(1)}<span className="text-xs">s</span>
                            </p>
                        </div>
                        
@@ -265,11 +317,14 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
        {/* FOOTER */}
        <div className="p-6 bg-gym-800 border-t border-gym-700 flex justify-between items-center z-10">
            <div>
-               <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Reps Completed</p>
-               <p className="text-5xl font-black text-white leading-none">{reps} <span className="text-xl text-gray-500 font-medium">/ {targetReps}</span></p>
+               <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">{exercise.isTimed ? 'Current Time' : 'Reps Completed'}</p>
+               <p className="text-5xl font-black text-white leading-none">
+                   {exercise.isTimed ? formatTimer(timerSeconds) : reps} 
+                   {!exercise.isTimed && <span className="text-xl text-gray-500 font-medium">/ {targetReps}</span>}
+               </p>
            </div>
            <button 
-             onClick={onClose}
+             onClick={handleFinish}
              className="px-8 py-4 bg-white text-gym-900 font-bold rounded-2xl shadow-xl active:scale-95 transition-transform hover:bg-gray-100"
            >
                Finish Set

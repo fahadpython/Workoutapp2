@@ -3,7 +3,7 @@ export type MuscleGroup = 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Triceps' | 
 
 export type ExerciseType = 'weighted' | 'cardio';
 
-export type MotionType = 'press' | 'pull' | 'hinge' | 'curl' | 'raise' | 'hold' | 'fly' | 'cardio';
+export type MotionType = 'press' | 'pull' | 'hinge' | 'curl' | 'raise' | 'hold' | 'fly' | 'cardio' | 'squat';
 
 export interface PacerPhase {
   action: string; // Display text: "Lower", "Press", "Pull"
@@ -33,6 +33,7 @@ export interface Exercise {
   targetGroup: MuscleGroup; // For analytics aggregation
   feeling: string; // "How it should feel"
   isWarmup?: boolean;
+  isTimed?: boolean; // New: For planks, wall sits, etc.
   pacer: PacerConfig; // New bio-mechanic pacer
   metValue: number; // Metabolic Equivalent for calorie calc
   muscleSplit?: Record<string, number>; // Percentage breakdown

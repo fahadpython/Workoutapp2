@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -13,6 +13,103 @@ interface Props {
   onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean) => void;
   onBack: () => void;
 }
+
+// --- SUB-COMPONENT: PYRAMID CALCULATOR ---
+const PyramidCalculator: React.FC<{ 
+    currentBest: number, 
+    onFill: (w: number, r: number) => void 
+}> = ({ currentBest, onFill }) => {
+    const [targetWeight, setTargetWeight] = useState(currentBest > 0 ? currentBest : 60);
+    const [targetReps, setTargetReps] = useState(8);
+
+    const round = (num: number) => Math.round(num / 2.5) * 2.5;
+
+    // Algorithm: Reverse Engineering
+    const workingSets = [
+        { type: 'Entry', label: 'Set 1: First Working', weight: round(targetWeight * 0.80), reps: targetReps + 3, pct: '80%' },
+        { type: 'Build', label: 'Set 2: Heavy Build-up', weight: round(targetWeight * 0.90), reps: targetReps + 1, pct: '90%' },
+        { type: 'Top', label: 'Set 3: TOP SET (Goal)', weight: targetWeight, reps: targetReps, pct: '100%' },
+    ];
+
+    const warmups = [];
+    if (targetWeight > 40) warmups.push({ label: 'Warmup: Movement', weight: 20, reps: 15, pct: 'Bar' });
+    const w1 = round(targetWeight * 0.4);
+    if (w1 > 20) warmups.push({ label: 'Warmup: Light', weight: w1, reps: 10, pct: '40%' });
+    const w2 = round(targetWeight * 0.6);
+    warmups.push({ label: 'Warmup: Primer', weight: w2, reps: 3, pct: '60%' });
+
+    return (
+        <div className="mb-4 bg-gym-900 rounded-xl border border-gym-700 overflow-hidden animate-in slide-in-from-top-2">
+            <div className="bg-gym-800 p-3 border-b border-gym-700 flex justify-between items-center">
+                <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                    <Calculator size={14} className="text-gym-accent" /> Pyramid Planner
+                </h4>
+                <span className="text-[10px] text-gray-500">Rev. Engineering</span>
+            </div>
+            
+            <div className="p-4">
+                <div className="flex gap-4 mb-4 items-end">
+                    <div className="flex-1">
+                        <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Target Top Weight</label>
+                        <input 
+                            type="number" 
+                            value={targetWeight}
+                            onChange={(e) => setTargetWeight(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-gym-800 border border-gym-600 rounded p-2 text-white font-bold text-center focus:border-gym-accent focus:outline-none"
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Target Top Reps</label>
+                        <input 
+                            type="number" 
+                            value={targetReps}
+                            onChange={(e) => setTargetReps(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-gym-800 border border-gym-600 rounded p-2 text-white font-bold text-center focus:border-gym-accent focus:outline-none"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    {/* Warmups */}
+                    {warmups.map((set, i) => (
+                        <div key={`w-${i}`} className="flex justify-between items-center p-2 rounded hover:bg-gym-800/50 group">
+                            <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-gray-600"></div>
+                                <div>
+                                    <p className="text-xs text-gray-400 font-bold">{set.label}</p>
+                                    <p className="text-xs text-gray-500">{set.pct}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="font-mono text-gray-400 text-sm">{set.weight}kg x {set.reps}</span>
+                                <button onClick={() => onFill(set.weight, set.reps)} className="text-gray-600 hover:text-white"><ArrowDownCircle size={14} /></button>
+                            </div>
+                        </div>
+                    ))}
+                    
+                    <div className="my-2 border-t border-dashed border-gym-700"></div>
+
+                    {/* Working Sets */}
+                    {workingSets.map((set, i) => (
+                        <div key={`wk-${i}`} className={`flex justify-between items-center p-2 rounded hover:bg-gym-800/50 group ${set.type === 'Top' ? 'bg-gym-accent/10 border border-gym-accent/20' : ''}`}>
+                            <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${set.type === 'Top' ? 'bg-gym-accent' : 'bg-green-500'}`}></div>
+                                <div>
+                                    <p className={`text-xs font-bold ${set.type === 'Top' ? 'text-white' : 'text-gray-300'}`}>{set.label}</p>
+                                    <p className="text-[10px] text-gray-500">{set.pct}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className={`font-mono text-sm font-bold ${set.type === 'Top' ? 'text-gym-accent' : 'text-white'}`}>{set.weight}kg x {set.reps}</span>
+                                <button onClick={() => onFill(set.weight, set.reps)} className="text-gray-500 hover:text-white"><ArrowDownCircle size={14} /></button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- SUB-COMPONENT: FORM VISUALIZER ---
 const FormVisualizer: React.FC<{ type?: MotionType }> = ({ type }) => {
@@ -219,6 +316,7 @@ const ExerciseCard: React.FC<Props> = ({
   const [setMode, setSetMode] = useState<0 | 1 | 2>(0);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showPyramidCalc, setShowPyramidCalc] = useState(false);
   const [estCalories, setEstCalories] = useState(0);
   const [recommendation, setRecommendation] = useState<CoachRecommendation | null>(null);
   const [coachFeedback, setCoachFeedback] = useState<string | null>(null);
@@ -229,6 +327,8 @@ const ExerciseCard: React.FC<Props> = ({
   const [bestHistorical1RM, setBestHistorical1RM] = useState(0);
 
   const isCardio = exercise.type === 'cardio';
+  // If it's timed (like Plank), treat metric2 as Time
+  const isTimed = exercise.isTimed || isCardio;
 
   useEffect(() => {
     const hist = getExerciseHistory(exercise.id);
@@ -487,6 +587,26 @@ const ExerciseCard: React.FC<Props> = ({
           </button>
       )}
 
+      {/* --- NEW PYRAMID CALCULATOR TOGGLE --- */}
+      {!isCardio && !exercise.isWarmup && (
+          <button 
+            onClick={() => setShowPyramidCalc(!showPyramidCalc)}
+            className={`mb-4 w-full py-3 border border-gym-700 font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform
+                ${showPyramidCalc ? 'bg-gym-accent border-gym-accent text-white' : 'bg-gym-800 text-gym-accent'}
+            `}
+          >
+             <Calculator size={18} /> {showPyramidCalc ? 'Hide Pyramid Calculator' : 'Pyramid Set Calculator'}
+          </button>
+      )}
+      
+      {/* PYRAMID CALCULATOR COMPONENT */}
+      {showPyramidCalc && (
+          <PyramidCalculator 
+             currentBest={lastSession?.weight || recommendation?.targetWeight || 0} 
+             onFill={(w, r) => { setMetric1(w.toString()); setMetric2(r.toString()); }}
+          />
+      )}
+
       <button 
         onClick={() => setShowInfo(!showInfo)}
         className="mb-4 w-full flex items-center justify-between bg-gym-800/50 p-3 rounded-lg border border-gym-700 text-sm text-gray-300"
@@ -569,7 +689,7 @@ const ExerciseCard: React.FC<Props> = ({
                           </div>
                           <div className="w-1/2">
                               <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
-                                  {isCardio ? 'Time (mins)' : 'Reps'}
+                                  {isTimed ? 'Time (sec)' : (isCardio ? 'Time (mins)' : 'Reps')}
                               </label>
                               <input 
                                   type="number" 
@@ -641,7 +761,7 @@ const ExerciseCard: React.FC<Props> = ({
                             onClick={() => setShowMotionTracker(true)}
                             className="py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/40"
                           >
-                              <Play size={20} fill="currentColor" /> Start Set
+                              <Play size={20} fill="currentColor" /> {isTimed ? 'Start Timer' : 'Start Set'}
                           </button>
                           
                           <button 
@@ -676,7 +796,7 @@ const ExerciseCard: React.FC<Props> = ({
                          <span className="text-white font-bold">
                              {exercise.isWarmup ? 'Warmup' : (isCardio ? `${set.weight}km` : `${set.weight}kg`)}
                              {!exercise.isWarmup && ' × '}
-                             {isCardio ? `${set.reps}min` : exercise.isWarmup ? `Complete (${set.reps} reps)` : `${set.reps} reps`}
+                             {isCardio ? `${set.reps}min` : exercise.isWarmup ? `Complete (${set.reps} reps)` : (isTimed ? `${set.reps}s` : `${set.reps} reps`)}
                          </span>
                          <div className="flex gap-2">
                             {set.isDropSet && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Drop Set</span>}

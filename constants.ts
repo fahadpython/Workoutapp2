@@ -30,6 +30,16 @@ const PACER_ISO_HOLD: PacerConfig = {
   ]
 };
 
+const PACER_BREATHING: PacerConfig = {
+    startDelay: 3,
+    phases: [
+        { action: 'BREATHE IN', duration: 4, voiceCue: 'Inhale', breathing: 'Inhale' },
+        { action: 'HOLD', duration: 4, voiceCue: 'Hold', breathing: 'Hold' },
+        { action: 'BREATHE OUT', duration: 4, voiceCue: 'Exhale', breathing: 'Exhale' },
+        { action: 'HOLD', duration: 4, voiceCue: 'Hold', breathing: 'Hold' }
+    ]
+};
+
 const PACER_FAST: PacerConfig = {
   startDelay: 2,
   phases: [
@@ -41,6 +51,41 @@ const PACER_FAST: PacerConfig = {
 const PACER_STOPWATCH: PacerConfig = {
   startDelay: 0,
   phases: [] // Special case for stopwatch logic
+};
+
+// Custom Pacers for Legs
+const PACER_DEADLIFT: PacerConfig = {
+  startDelay: 3,
+  phases: [
+    { action: 'DRIVE', duration: 1, voiceCue: 'Drive', breathing: 'Exhale' },
+    { action: 'RESET', duration: 1, voiceCue: 'Reset', breathing: 'Inhale' }
+  ]
+};
+
+const PACER_CONTROLLED_HINGE: PacerConfig = { // 3-1-1
+  startDelay: 3,
+  phases: [
+    { action: 'LOWER', duration: 3, voiceCue: 'Hips Back', breathing: 'Inhale' },
+    { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' },
+    { action: 'UP', duration: 1, voiceCue: 'Drive', breathing: 'Exhale' }
+  ]
+};
+
+const PACER_CALVES: PacerConfig = { // 2-2-1
+  startDelay: 3,
+  phases: [
+    { action: 'LOWER', duration: 2, voiceCue: 'Down', breathing: 'Inhale' },
+    { action: 'PAUSE', duration: 2, voiceCue: 'Hold', breathing: 'Hold' },
+    { action: 'UP', duration: 1, voiceCue: 'Drive', breathing: 'Exhale' }
+  ]
+};
+
+const PACER_CHOP: PacerConfig = {
+  startDelay: 2,
+  phases: [
+    { action: 'CHOP', duration: 1, voiceCue: 'Chop', breathing: 'Exhale' },
+    { action: 'RETURN', duration: 2, voiceCue: 'Return', breathing: 'Inhale' }
+  ]
 };
 
 export const DEFAULT_PACER_STOPWATCH = PACER_STOPWATCH;
@@ -281,60 +326,58 @@ export const PULL_A_DAY: WorkoutDay = {
   ]
 };
 
-export const LEGS_DAY: WorkoutDay = {
-  id: 'legs',
-  name: 'LEGS: Knee-Safe Posterior',
-  focus: 'Hamstrings, Glutes, Calves & Core',
+export const LEGS_POWER_DAY: WorkoutDay = {
+  id: 'legs_power',
+  name: 'LEGS: Power & Strength',
+  focus: 'Posterior Chain Explosiveness',
   exercises: [
     ...WARMUP_EXERCISES,
-    { 
-      id: 'l_1', name: 'Romanian Deadlift (RDL)', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 180, 
-      cues: 'Push hips back to close door. Stop when hips stop.', 
-      setup: 'Feet hip-width. Knees slightly bent and LOCKED.',
-      visualize: 'Your hands are hooks holding the bar; your hips are the engine.',
-      action: 'Push hips back to close a car door behind you. Bar drags against thighs. Stop when hips stop moving back. Squeeze glutes to stand up.',
-      muscleFocus: 'Hamstrings/Glutes', targetGroup: 'Legs', feeling: 'Intense stretch in hams.', 
-      pacer: { ...PACER_PUSH, phases: [{ action: 'HINGE', duration: 3, voiceCue: 'Hips Back', breathing: 'Inhale' }, { action: 'DRIVE', duration: 1, voiceCue: 'Hips Forward', breathing: 'Exhale' }] }, 
-      metValue: 8.0, muscleSplit: { 'Hamstrings': 60, 'Glutes': 30, 'Lower Back': 10 }, motionType: 'hinge', isCompound: true 
+    {
+      id: 'lp_1', name: 'Conventional Deadlift', type: 'weighted', sets: 3, reps: '5', restSeconds: 180,
+      cues: 'Slack out. Push floor. Stand tall. Dead stop.',
+      setup: 'Bar on floor. Feet hip-width. Shins touching the bar.',
+      visualize: 'Push the floor away with your feet. Do not pull with your arms.',
+      action: 'Take slack out of bar (click). Drive feet down. Stand tall. Lock hips. Reset completely on floor.',
+      muscleFocus: 'Posterior Chain', targetGroup: 'Legs', feeling: 'Total body tension.',
+      pacer: PACER_DEADLIFT, metValue: 8.0, muscleSplit: { 'Hamstrings': 35, 'Glutes': 35, 'Quads': 20, 'Lower Back': 10 }, motionType: 'hinge', isCompound: true
     },
-    { 
-      id: 'l_2', name: 'Weighted Glute Bridge', type: 'weighted', sets: 4, reps: '12-15', restSeconds: 120, 
-      cues: 'Drive through heels. Ugly squeeze at top for 2 seconds.', 
-      setup: 'Upper back on floor/bench. Weight on hips.',
-      visualize: 'A straight line from knees to shoulders.',
-      action: 'Drive through heels. Thrust hips to ceiling. Squeeze butt ugly hard for 2 seconds at top.',
-      muscleFocus: 'Glutes', targetGroup: 'Legs', feeling: 'Glute cramping.', 
-      pacer: PACER_ISO_HOLD, metValue: 6.5, muscleSplit: { 'Glutes': 100 }, motionType: 'hinge', isCompound: true 
+    {
+      id: 'lp_2', name: 'Dumbbell RDL', type: 'weighted', sets: 3, reps: '8-10', restSeconds: 120,
+      cues: 'Soft knees. Hips back. Close car door.',
+      setup: 'Hold DBs in front. Knees soft & locked. Feet hip-width.',
+      visualize: 'Painting your legs with the dumbbells. Keep them touching your pants.',
+      action: 'Push hips back until hamstrings are tight. Stop when hips stop moving. Squeeze glutes to return.',
+      muscleFocus: 'Hamstrings', targetGroup: 'Legs', feeling: 'Deep hamstring stretch.',
+      pacer: PACER_CONTROLLED_HINGE, metValue: 6.0, muscleSplit: { 'Hamstrings': 70, 'Glutes': 20, 'Lower Back': 10 }, motionType: 'hinge', isCompound: true
     },
-    { 
-      id: 'l_3', name: 'Seated Calf Raise', type: 'weighted', sets: 4, reps: '15-20', restSeconds: 60, 
-      cues: 'Pause at bottom stretch for 2 seconds. No bounce.', 
-      setup: 'Pads on knees.',
-      visualize: 'Stretching your heel to the floor.',
-      action: 'Drop heels deep. PAUSE 2 seconds at the bottom. Explode up on toes.',
-      muscleFocus: 'Soleus', targetGroup: 'Legs', feeling: 'Fire in lower legs.', 
-      pacer: { ...PACER_ISO_HOLD, phases: [{ action: 'RAISE', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Hold', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Down', breathing: 'Inhale' }, { action: 'STRETCH', duration: 2, voiceCue: 'Stretch', breathing: 'Hold' }] }, 
-      metValue: 4.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false 
+    {
+      id: 'lp_3', name: 'Seated Calf Raise', type: 'weighted', sets: 4, reps: '12-15', restSeconds: 90,
+      cues: 'Deep drop. Pause 2 seconds. No bounce.',
+      setup: 'Pads on knees. Balls of feet on ledge.',
+      visualize: 'Trying to touch your heels to the floor.',
+      action: 'Drop heels deep. PAUSE. Drive up onto big toe.',
+      muscleFocus: 'Soleus', targetGroup: 'Legs', feeling: 'Fire in lower calves.',
+      pacer: PACER_CALVES, metValue: 3.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false
     },
-    { 
-      id: 'l_4', name: 'Dead Bugs', type: 'weighted', sets: 3, reps: '15', restSeconds: 60, 
-      cues: 'Lower opposite arm/leg slowly. Keep back glued to floor.', 
-      setup: 'Back flat on floor.',
-      visualize: 'Gluing lower back to the mat.',
-      action: 'Lower opposite arm/leg slowly. Keep lower back glued to floor.',
-      muscleFocus: 'Deep Core', targetGroup: 'Abs', feeling: 'Abs shaking.', 
-      pacer: PACER_PUSH, metValue: 3.5, muscleSplit: { 'Core': 100 }, motionType: 'hold', isCompound: false 
+    {
+      id: 'lp_4', name: 'Hanging Leg Raises', type: 'weighted', sets: 3, reps: '10-15', restSeconds: 90,
+      cues: 'Don\'t swing. Curl pelvis up. Control down.',
+      setup: 'Hang from pull-up bar. Shoulders down (packed).',
+      visualize: 'Show the bottom of your feet to the wall in front of you.',
+      action: 'Curl knees/legs up. Round your lower back slightly at top. Lower slowly without swinging.',
+      muscleFocus: 'Lower Abs', targetGroup: 'Abs', feeling: 'Deep abdominal crunch.',
+      pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 2, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }] }, 
+      metValue: 4.0, muscleSplit: { 'Abs': 80, 'Hip Flexors': 20 }, motionType: 'hold', isCompound: false
     },
-    { 
-      id: 'l_5', name: 'Plank', type: 'weighted', sets: 3, reps: 'Fail', restSeconds: 60, 
-      cues: 'Squeeze glutes and abs. Pull elbows to toes.', 
-      setup: 'Elbows under shoulders.',
-      visualize: 'Creating full body tension.',
-      action: 'Squeeze glutes and abs. Pull elbows towards toes isometrically.',
-      muscleFocus: 'Stability', targetGroup: 'Abs', feeling: 'Whole body tension.', 
-      pacer: { ...PACER_ISO_HOLD, startDelay: 0, phases: [{ action: 'HOLD', duration: 10, voiceCue: 'Hold Strong', breathing: 'Hold' }] }, 
-      metValue: 4.0, muscleSplit: { 'Abs': 60, 'Glutes': 20, 'Shoulders': 20 }, motionType: 'hold', isCompound: false 
-    },
+    {
+      id: 'lp_5', name: 'Cable Woodchoppers', type: 'weighted', sets: 3, reps: '12-15', restSeconds: 60,
+      cues: 'Twist torso. Slash down. Control back.',
+      setup: 'Cable pulley high. Stand sideways.',
+      visualize: 'Slashing a sword across your body.',
+      action: 'Pull handle diagonally down to opposite knee. Twist torso. Return slowly.',
+      muscleFocus: 'Obliques', targetGroup: 'Abs', feeling: 'Side core burn.',
+      pacer: PACER_CHOP, metValue: 4.0, muscleSplit: { 'Obliques': 80, 'Abs': 20 }, motionType: 'pull', isCompound: false
+    }
   ]
 };
 
@@ -474,14 +517,71 @@ export const PULL_B_DAY: WorkoutDay = {
   ]
 };
 
+export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
+  id: 'legs_hyper',
+  name: 'LEGS: Hypertrophy',
+  focus: 'Volume & Detail',
+  exercises: [
+    ...WARMUP_EXERCISES,
+    {
+      id: 'lh_1', name: 'Barbell RDL', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 120,
+      cues: 'Hips back. Bar close. Feel hamstring stretch.',
+      setup: 'Barbell. Feet hip-width. Knees slightly bent and frozen.',
+      visualize: 'Your hands are hooks. Your hips are the engine.',
+      action: 'Send hips back. Bar drags down thighs. Stop at mid-shin. Drive hips forward to lock out.',
+      muscleFocus: 'Hamstrings', targetGroup: 'Legs', feeling: 'Stretch in hams.',
+      pacer: PACER_CONTROLLED_HINGE, metValue: 7.0, muscleSplit: { 'Hamstrings': 60, 'Glutes': 30, 'Lower Back': 10 }, motionType: 'hinge', isCompound: true
+    },
+    {
+      id: 'lh_2', name: 'Hyperextensions', type: 'weighted', sets: 3, reps: '15', restSeconds: 90,
+      cues: 'Hinge at hips. Don\'t over-arch spine. Squeeze glutes.',
+      setup: '45° Roman Chair. Pad just below hips.',
+      visualize: 'Use your hamstrings to pull you up, not your lower back.',
+      action: 'Hug plate to chest. Lower until stretch felt. Pull up until body is straight line.',
+      muscleFocus: 'Posterior Chain', targetGroup: 'Back', feeling: 'Glute/Ham/Lower Back pump.',
+      pacer: { startDelay: 2, phases: [{ action: 'LOWER', duration: 2, voiceCue: 'Down', breathing: 'Inhale' }, { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' }, { action: 'UP', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }] },
+      metValue: 4.5, muscleSplit: { 'Hamstrings': 40, 'Glutes': 40, 'Lower Back': 20 }, motionType: 'hinge', isCompound: false
+    },
+    {
+      id: 'lh_3', name: 'Seated Calf Raise', type: 'weighted', sets: 4, reps: '15-20', restSeconds: 60,
+      cues: 'Heels down. 2-sec pause. Explode.',
+      setup: 'Pads on knees.',
+      visualize: 'Dead stop at the bottom.',
+      action: 'Lower fully. Wait for count of two. Explode up.',
+      muscleFocus: 'Soleus', targetGroup: 'Legs', feeling: 'Deep burn.',
+      pacer: PACER_CALVES, metValue: 3.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false
+    },
+    {
+      id: 'lh_4', name: 'Hanging Leg Raises', type: 'weighted', sets: 3, reps: 'Failure', restSeconds: 90,
+      cues: 'No momentum. Curl up. Slow down.',
+      setup: 'Hang from bar.',
+      visualize: 'Curling your tailbone to your belly button.',
+      action: 'Lift legs. Focus on the pelvic curl at the top. Lower with control.',
+      muscleFocus: 'Abs', targetGroup: 'Abs', feeling: 'Abdominal cramping.',
+      pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }] },
+      metValue: 4.0, muscleSplit: { 'Abs': 100 }, motionType: 'hold', isCompound: false
+    },
+    {
+      id: 'lh_5', name: 'Plank', type: 'weighted', sets: 3, reps: 'Failure', restSeconds: 60,
+      cues: 'Glutes tight. Pull elbows down. Breathe.',
+      setup: 'Elbows under shoulders. Toes on floor.',
+      visualize: 'Pulling your elbows to your toes (scrunching the floor).',
+      action: 'Squeeze glutes. Squeeze abs. Pull elbows down isometrically to increase tension.',
+      muscleFocus: 'Core', targetGroup: 'Abs', feeling: 'Whole body shaking.',
+      pacer: PACER_BREATHING, isTimed: true,
+      metValue: 3.5, muscleSplit: { 'Abs': 60, 'Glutes': 20, 'Shoulders': 20 }, motionType: 'hold', isCompound: false
+    }
+  ]
+};
+
 export const WORKOUT_SCHEDULE: Record<number, WorkoutDay | null> = {
   0: null, // Sunday: Rest
   1: PUSH_A_DAY, // Monday
   2: PULL_A_DAY, // Tuesday
-  3: LEGS_DAY, // Wednesday
+  3: LEGS_POWER_DAY, // Wednesday
   4: PUSH_B_DAY, // Thursday
   5: PULL_B_DAY, // Friday
-  6: LEGS_DAY, // Saturday
+  6: LEGS_HYPERTROPHY_DAY, // Saturday
 };
 
-export const ALL_WORKOUTS = [PUSH_A_DAY, PULL_A_DAY, LEGS_DAY, PUSH_B_DAY, PULL_B_DAY];
+export const ALL_WORKOUTS = [PUSH_A_DAY, PULL_A_DAY, LEGS_POWER_DAY, PUSH_B_DAY, PULL_B_DAY, LEGS_HYPERTROPHY_DAY];
