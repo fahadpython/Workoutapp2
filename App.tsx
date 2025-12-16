@@ -10,7 +10,8 @@ import StatsView from './components/StatsView';
 import BodyHeatmap from './components/BodyHeatmap';
 import WorkoutReceipt from './components/WorkoutReceipt';
 import LoginScreen from './components/LoginScreen';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload } from 'lucide-react';
+import HelpView from './components/HelpView';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle } from 'lucide-react';
 
 const App: React.FC = () => {
   // User Management State
@@ -19,7 +20,7 @@ const App: React.FC = () => {
   // App State (Lazy initialized only if user exists)
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS'>('HOME');
+  const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS' | 'HELP'>('HOME');
   
   // Dashboard Data
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
@@ -285,6 +286,10 @@ const App: React.FC = () => {
     return <StatsView onBack={() => setView('HOME')} />;
   }
 
+  if (view === 'HELP') {
+    return <HelpView onBack={() => setView('HOME')} />;
+  }
+
   if (view === 'WORKOUT' && currentSession) {
     if (currentSession.isFinished) {
       return <WorkoutReceipt data={getSessionSummary(currentSession)} onClose={handleCompleteWorkoutSummary} />;
@@ -394,6 +399,7 @@ const App: React.FC = () => {
           <p className="text-[10px] text-gray-500 font-mono tracking-[0.2em] uppercase">Hypertrophy Blueprint</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setView('HELP')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gray-400 hover:text-white" title="App Guide"><HelpCircle size={20} /></button>
           <button onClick={() => setView('STATS')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gym-accent"><BarChart3 size={20} /></button>
           <button onClick={() => setView('SETTINGS')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700"><UserCircle2 className="text-gray-400" /></button>
         </div>

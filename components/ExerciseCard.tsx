@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau, saveExerciseNote, getExerciseNote, wasSkippedLastSession, saveSkippedExercise } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff, AlertCircle } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -23,76 +23,140 @@ const SmartLogBar: React.FC<{
     onFill: (w: number, r: number) => void;
 }> = ({ lastWeight, lastReps, onFill }) => {
     const [isListening, setIsListening] = useState(false);
+    const [supportError, setSupportError] = useState<string | null>(null);
+    const [showHelp, setShowHelp] = useState(false);
     
+    // Check browser support on mount
+    useEffect(() => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            setSupportError("Voice not supported in this browser");
+        }
+    }, []);
+
     // Voice Recognition Setup
     const startListening = () => {
-        if (!('webkitSpeechRecognition' in window)) {
-            alert("Voice features not supported on this browser.");
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        
+        if (!SpeechRecognition) {
+            alert("Voice input is not supported in this browser. Please use Chrome or Safari.");
             return;
         }
         
-        const recognition = new (window as any).webkitSpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-        
-        setIsListening(true);
-        
-        recognition.onresult = (event: any) => {
-            const text = event.results[0][0].transcript;
-            console.log("Heard:", text);
+        try {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
             
-            // Regex to find numbers. Expected: "80 for 10", "100 kg 5 reps", "80 10"
-            const numbers = text.match(/(\d+(\.\d+)?)/g);
+            setIsListening(true);
+            setSupportError(null);
             
-            if (numbers && numbers.length >= 2) {
-                const w = parseFloat(numbers[0]);
-                const r = parseFloat(numbers[1]);
-                onFill(w, r);
-            } else if (numbers && numbers.length === 1) {
-                // Assume weight only if one number
-                onFill(parseFloat(numbers[0]), lastReps || 0);
-            }
+            recognition.onstart = () => {
+                console.log("Listening started...");
+            };
+
+            recognition.onresult = (event: any) => {
+                const text = event.results[0][0].transcript;
+                console.log("Heard:", text);
+                
+                // Regex to find numbers. Expected: "80 for 10", "100 kg 5 reps", "80 10"
+                // Matches integers or decimals
+                const numbers = text.match(/(\d+(\.\d+)?)/g);
+                
+                if (numbers && numbers.length >= 2) {
+                    const w = parseFloat(numbers[0]);
+                    const r = parseFloat(numbers[1]);
+                    onFill(w, r);
+                } else if (numbers && numbers.length === 1) {
+                    // Assume weight only if one number, reuse last reps
+                    onFill(parseFloat(numbers[0]), lastReps || 0);
+                } else {
+                    setSupportError("Didn't catch numbers. Try '80 10'");
+                    setTimeout(() => setSupportError(null), 3000);
+                }
+                
+                setIsListening(false);
+            };
             
+            recognition.onerror = (e: any) => {
+                console.error("Speech Error", e);
+                setIsListening(false);
+                if (e.error === 'not-allowed') {
+                    setSupportError("Mic permission denied.");
+                } else {
+                    setSupportError("Error listening. Try again.");
+                }
+                setTimeout(() => setSupportError(null), 3000);
+            };
+            
+            recognition.onend = () => setIsListening(false);
+            
+            recognition.start();
+        } catch (e) {
+            console.error(e);
+            setSupportError("Failed to start mic.");
             setIsListening(false);
-        };
-        
-        recognition.onerror = () => setIsListening(false);
-        recognition.onend = () => setIsListening(false);
-        
-        recognition.start();
+        }
     };
 
     return (
-        <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
-            <button 
-                onClick={startListening}
-                className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-xs whitespace-nowrap transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gym-800 text-gym-accent border border-gym-accent/30'}`}
-            >
-                {isListening ? <MicOff size={14}/> : <Mic size={14}/>} {isListening ? 'Listening...' : 'Smart Mic'}
-            </button>
+        <div className="mb-4">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 items-center">
+                <button 
+                    onClick={startListening}
+                    disabled={!!supportError && supportError.includes("not supported")}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-xs whitespace-nowrap transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gym-800 text-gym-accent border border-gym-accent/30'}`}
+                >
+                    {isListening ? <MicOff size={14}/> : <Mic size={14}/>} {isListening ? 'Listening...' : 'Smart Mic'}
+                </button>
+                
+                <button onClick={() => setShowHelp(!showHelp)} className="p-2 text-gray-500 hover:text-white">
+                    <HelpCircle size={16} />
+                </button>
+
+                {lastWeight > 0 && (
+                    <>
+                        <button 
+                            onClick={() => onFill(lastWeight, lastReps)}
+                            className="px-3 py-2 bg-gym-800 border border-gym-700 text-gray-300 rounded-lg text-xs font-bold whitespace-nowrap"
+                        >
+                            Last: {lastWeight}x{lastReps}
+                        </button>
+                        <button 
+                            onClick={() => onFill(lastWeight + 2.5, lastReps)}
+                            className="px-3 py-2 bg-gym-800 border border-gym-700 text-green-400 rounded-lg text-xs font-bold whitespace-nowrap"
+                        >
+                            +2.5kg
+                        </button>
+                        <button 
+                            onClick={() => onFill(lastWeight - 2.5, lastReps)}
+                            className="px-3 py-2 bg-gym-800 border border-gym-700 text-orange-400 rounded-lg text-xs font-bold whitespace-nowrap"
+                        >
+                            -2.5kg
+                        </button>
+                    </>
+                )}
+            </div>
             
-            {lastWeight > 0 && (
-                <>
-                    <button 
-                        onClick={() => onFill(lastWeight, lastReps)}
-                        className="px-3 py-2 bg-gym-800 border border-gym-700 text-gray-300 rounded-lg text-xs font-bold whitespace-nowrap"
-                    >
-                        Last: {lastWeight}x{lastReps}
-                    </button>
-                    <button 
-                        onClick={() => onFill(lastWeight + 2.5, lastReps)}
-                        className="px-3 py-2 bg-gym-800 border border-gym-700 text-green-400 rounded-lg text-xs font-bold whitespace-nowrap"
-                    >
-                        +2.5kg
-                    </button>
-                    <button 
-                        onClick={() => onFill(lastWeight - 2.5, lastReps)}
-                        className="px-3 py-2 bg-gym-800 border border-gym-700 text-orange-400 rounded-lg text-xs font-bold whitespace-nowrap"
-                    >
-                        -2.5kg
-                    </button>
-                </>
+            {/* Error / Feedback Message */}
+            {supportError && (
+                <div className="mt-2 text-[10px] text-red-400 flex items-center gap-1 animate-in fade-in">
+                    <AlertCircle size={10} /> {supportError}
+                </div>
+            )}
+
+            {/* Help Tooltip */}
+            {showHelp && (
+                <div className="mt-2 bg-gym-800 p-3 rounded-lg border border-gym-700 text-xs text-gray-300 animate-in fade-in">
+                    <p className="font-bold text-white mb-1">How to use Voice Log:</p>
+                    <p>Tap the mic and say two numbers.</p>
+                    <ul className="list-disc list-inside mt-1 text-[10px] text-gray-400">
+                        <li>"<strong>80</strong> kilos <strong>10</strong> reps"</li>
+                        <li>"<strong>100</strong> for <strong>5</strong>"</li>
+                        <li>"<strong>20</strong> <strong>12</strong>"</li>
+                    </ul>
+                </div>
             )}
         </div>
     );
