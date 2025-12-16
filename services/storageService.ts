@@ -1,5 +1,5 @@
 
-import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile } from '../types';
+import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise } from '../types';
 import { ALL_WORKOUTS } from '../constants';
 
 // --- KEY MANAGEMENT SYSTEM ---
@@ -15,6 +15,9 @@ const BASE_KEYS = {
   STATS: 'iron_guide_stats_v2',
   HISTORY: 'iron_guide_history_v2',
   CALIBRATION: 'iron_guide_calibration_v1',
+  NOTES: 'iron_guide_notes_v1',
+  SKIPPED: 'iron_guide_skipped_v1', // Track skip history
+  PENDING: 'iron_guide_pending_v1', // Track rescheduled items
 };
 
 // State to hold current user ID in memory
@@ -123,6 +126,9 @@ export const exportUserData = () => {
       stats: localStorage.getItem(getKey(BASE_KEYS.STATS)),
       history: localStorage.getItem(getKey(BASE_KEYS.HISTORY)),
       calibration: localStorage.getItem(getKey(BASE_KEYS.CALIBRATION)),
+      notes: localStorage.getItem(getKey(BASE_KEYS.NOTES)),
+      skipped: localStorage.getItem(getKey(BASE_KEYS.SKIPPED)),
+      pending: localStorage.getItem(getKey(BASE_KEYS.PENDING)),
     }
   };
 
@@ -160,6 +166,9 @@ export const importUserData = async (file: File): Promise<boolean> => {
         if (json.data.stats) localStorage.setItem(getKey(BASE_KEYS.STATS), json.data.stats);
         if (json.data.history) localStorage.setItem(getKey(BASE_KEYS.HISTORY), json.data.history);
         if (json.data.calibration) localStorage.setItem(getKey(BASE_KEYS.CALIBRATION), json.data.calibration);
+        if (json.data.notes) localStorage.setItem(getKey(BASE_KEYS.NOTES), json.data.notes);
+        if (json.data.skipped) localStorage.setItem(getKey(BASE_KEYS.SKIPPED), json.data.skipped);
+        if (json.data.pending) localStorage.setItem(getKey(BASE_KEYS.PENDING), json.data.pending);
 
         resolve(true);
       } catch (e) {
@@ -228,6 +237,106 @@ export const loadUserStats = (): UserStats => {
   };
 };
 
+// --- NOTES FEATURE ---
+export const saveExerciseNote = (exerciseId: string, note: string) => {
+    const key = getKey(BASE_KEYS.NOTES);
+    const raw = localStorage.getItem(key);
+    const db = raw ? JSON.parse(raw) : {};
+    db[exerciseId] = note;
+    localStorage.setItem(key, JSON.stringify(db));
+};
+
+export const getExerciseNote = (exerciseId: string): string => {
+    const key = getKey(BASE_KEYS.NOTES);
+    const raw = localStorage.getItem(key);
+    if (!raw) return "";
+    const db = JSON.parse(raw);
+    return db[exerciseId] || "";
+};
+
+// --- SKIPPING & PENDING LOGIC ---
+
+export const saveSkippedExercise = (exerciseId: string, reason: string, targetWorkoutId?: string) => {
+    const today = getTodayString();
+    
+    // 1. Save to Skipped History
+    const skippedKey = getKey(BASE_KEYS.SKIPPED);
+    const skippedRaw = localStorage.getItem(skippedKey);
+    const skippedList: SkippedEntry[] = skippedRaw ? JSON.parse(skippedRaw) : [];
+    
+    skippedList.push({ exerciseId, date: today, reason });
+    localStorage.setItem(skippedKey, JSON.stringify(skippedList));
+
+    // 2. Add to Pending if rescheduled
+    if (targetWorkoutId) {
+        const pendingKey = getKey(BASE_KEYS.PENDING);
+        const pendingRaw = localStorage.getItem(pendingKey);
+        const pendingList: PendingExercise[] = pendingRaw ? JSON.parse(pendingRaw) : [];
+        
+        pendingList.push({
+            exerciseId,
+            originalDate: today,
+            targetWorkoutId: targetWorkoutId,
+            reason
+        });
+        localStorage.setItem(pendingKey, JSON.stringify(pendingList));
+    }
+};
+
+export const getPendingExercises = (currentWorkoutId?: string): PendingExercise[] => {
+    const key = getKey(BASE_KEYS.PENDING);
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    
+    const list: PendingExercise[] = JSON.parse(raw);
+    const today = getTodayString();
+    
+    if (currentWorkoutId) {
+        // Return items specifically scheduled for this workout
+        return list.filter(item => item.targetWorkoutId === currentWorkoutId);
+    } else {
+        // Fallback: Return items scheduled for today's date (Legacy logic)
+        return list.filter(item => item.targetDate && item.targetDate <= today);
+    }
+};
+
+export const completePendingExercise = (exerciseId: string) => {
+    const key = getKey(BASE_KEYS.PENDING);
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    
+    let list: PendingExercise[] = JSON.parse(raw);
+    // Remove completed item (filter out match)
+    list = list.filter(item => item.exerciseId !== exerciseId);
+    
+    localStorage.setItem(key, JSON.stringify(list));
+};
+
+export const wasSkippedLastSession = (exerciseId: string): boolean => {
+    const key = getKey(BASE_KEYS.SKIPPED);
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    
+    const list: SkippedEntry[] = JSON.parse(raw);
+    
+    // Filter for this exercise
+    const mySkips = list.filter(s => s.exerciseId === exerciseId);
+    if (mySkips.length === 0) return false;
+    
+    // Sort descending by date
+    mySkips.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    const lastSkip = mySkips[0];
+    const skipDate = new Date(lastSkip.date);
+    const now = new Date();
+    
+    // Check if it was within the last 14 days (approx last "week" or session cycle)
+    const diffTime = Math.abs(now.getTime() - skipDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    
+    return diffDays <= 14;
+};
+
 // --- Helper: Calorie Calculation ---
 export const calculateCalories = (metric1: number, metric2: number, metValue: number, isCardio: boolean = false) => {
     // Formula: MET * BodyWeight(kg) * Duration(hours)
@@ -268,6 +377,9 @@ export const saveExerciseLog = (exerciseId: string, weight: number, reps: number
   history[exerciseId].push(newLog);
   
   localStorage.setItem(key, JSON.stringify(history));
+  
+  // Also clear pending if it exists
+  completePendingExercise(exerciseId);
 };
 
 export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null => {
@@ -309,6 +421,10 @@ export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null =
 };
 
 export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommendation: string | null } => {
+  // WARMUP EXCLUSION
+  const exercise = ALL_EXERCISES.find(e => e.id === exerciseId);
+  if (exercise?.isWarmup) return { isStalled: false, recommendation: null };
+
   const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   if (!historyRaw) return { isStalled: false, recommendation: null };
   
@@ -365,6 +481,9 @@ export const clearAllData = () => {
       localStorage.removeItem(getKey(BASE_KEYS.STATS));
       localStorage.removeItem(getKey(BASE_KEYS.HISTORY));
       localStorage.removeItem(getKey(BASE_KEYS.CALIBRATION));
+      localStorage.removeItem(getKey(BASE_KEYS.NOTES));
+      localStorage.removeItem(getKey(BASE_KEYS.SKIPPED));
+      localStorage.removeItem(getKey(BASE_KEYS.PENDING));
   }
   window.location.reload();
 };
@@ -424,6 +543,9 @@ export const getDashboardStats = (): DashboardStats => {
          pacer: { phases: [], startDelay: 0 }, metValue: 4 
        } as any;
     }
+
+    // Skip warmups in PR/Analytics calc
+    if (exerciseDef?.isWarmup) return;
 
     let maxWeight = 0;
     let prDate = '';
@@ -617,6 +739,11 @@ const roundToPlate = (weight: number) => {
 };
 
 export const getProgressionRecommendation = (exercise: Exercise): CoachRecommendation => {
+  // WARMUP EXCLUSION
+  if (exercise.isWarmup) {
+      return { type: 'BASELINE', targetWeight: 0, targetReps: exercise.reps, reason: "Warmup set." };
+  }
+
   const history = getExerciseHistory(exercise.id);
   
   // Default for new exercise
@@ -758,6 +885,7 @@ export const getSessionSummary = (session: SessionData): ReceiptData => {
         // Find Exercise Name
         let name = "Unknown Exercise";
         let isCardio = false;
+        let isWarmup = false;
         
         // Check standard
         let exDef = ALL_EXERCISES.find(e => e.id === exId);
@@ -767,7 +895,11 @@ export const getSessionSummary = (session: SessionData): ReceiptData => {
         if (exDef) {
             name = exDef.name;
             isCardio = exDef.type === 'cardio';
+            isWarmup = !!exDef.isWarmup;
         }
+
+        // FILTER: Skip warmups in receipt
+        if (isWarmup) continue;
 
         // Calculate Session Best & Volume
         let sessionBestWeight = 0;

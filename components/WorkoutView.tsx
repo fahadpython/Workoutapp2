@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { WorkoutDay, SessionData, ExerciseType, MuscleGroup, Exercise, MotionType, PacerConfig } from '../types';
-import { CheckCircle, ChevronRight, Layers, PlusCircle, Footprints, Dumbbell, Activity, Eye, Zap, Wrench, RefreshCw, Star, Flame } from 'lucide-react';
-import { DEFAULT_PACER_STOPWATCH } from '../constants';
+import React, { useState, useEffect } from 'react';
+import { WorkoutDay, SessionData, ExerciseType, MuscleGroup, Exercise, MotionType, PacerConfig, PendingExercise } from '../types';
+import { CheckCircle, ChevronRight, Layers, PlusCircle, Footprints, Dumbbell, Activity, Eye, Zap, Wrench, RefreshCw, Star, Flame, SkipForward, X, Calendar, AlertCircle } from 'lucide-react';
+import { DEFAULT_PACER_STOPWATCH, ALL_WORKOUTS } from '../constants';
+import { saveSkippedExercise, getPendingExercises, getTodayString } from '../services/storageService';
 
 interface Props {
   plan: WorkoutDay;
@@ -13,8 +14,89 @@ interface Props {
   onSwapExercise?: (originalId: string, newId: string) => void;
 }
 
+// Skip Modal Logic
+interface SkipModalProps {
+    exercise: Exercise;
+    onClose: () => void;
+    onConfirm: (reason: string, targetWorkoutId?: string) => void;
+}
+
+const SkipModal: React.FC<SkipModalProps> = ({ exercise, onClose, onConfirm }) => {
+    const [reason, setReason] = useState<string>('');
+    const [action, setAction] = useState<'SKIP' | 'RESCHEDULE'>('RESCHEDULE');
+    const [targetWorkoutId, setTargetWorkoutId] = useState<string>(ALL_WORKOUTS[0]?.id || '');
+
+    const reasons = ['Time Crunch', 'Injury / Pain', 'Equipment Busy', 'Fatigue', 'Other'];
+
+    const handleConfirm = () => {
+        if (!reason) return;
+        
+        if (action === 'RESCHEDULE') {
+            onConfirm(reason, targetWorkoutId);
+        } else {
+            onConfirm(reason);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[70] bg-gym-900/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+            <div className="bg-gym-800 border border-gym-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+                <h3 className="text-xl font-bold text-white mb-1">Skip {exercise.name}?</h3>
+                <p className="text-gray-400 text-sm mb-4">Select a reason to track your consistency.</p>
+                
+                <div className="space-y-2 mb-4">
+                    {reasons.map(r => (
+                        <button 
+                            key={r}
+                            onClick={() => setReason(r)}
+                            className={`w-full text-left p-3 rounded-lg border text-sm font-bold transition-all ${reason === r ? 'bg-gym-accent text-white border-gym-accent' : 'bg-gym-900 border-gym-700 text-gray-400 hover:border-gray-500'}`}
+                        >
+                            {r}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex bg-gym-900 rounded-lg p-1 mb-4 border border-gym-700">
+                    <button onClick={() => setAction('RESCHEDULE')} className={`flex-1 py-2 text-xs font-bold rounded ${action === 'RESCHEDULE' ? 'bg-gym-700 text-white' : 'text-gray-500'}`}>Reschedule</button>
+                    <button onClick={() => setAction('SKIP')} className={`flex-1 py-2 text-xs font-bold rounded ${action === 'SKIP' ? 'bg-red-900/50 text-red-200' : 'text-gray-500'}`}>Skip Entirely</button>
+                </div>
+
+                {action === 'RESCHEDULE' && (
+                    <div className="mb-6">
+                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-2 block">Move To Plan</label>
+                        <div className="grid grid-cols-2 gap-2 h-32 overflow-y-auto no-scrollbar">
+                            {ALL_WORKOUTS.map((w) => (
+                                <button 
+                                    key={w.id} 
+                                    onClick={() => setTargetWorkoutId(w.id)}
+                                    className={`p-2 rounded text-[10px] font-bold border text-left truncate ${targetWorkoutId === w.id ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gym-900 border-gym-700 text-gray-400'}`}
+                                >
+                                    {w.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex gap-3">
+                    <button onClick={onClose} className="flex-1 py-3 text-gray-400 font-bold text-sm">Cancel</button>
+                    <button onClick={handleConfirm} disabled={!reason} className="flex-1 py-3 bg-white text-gym-900 font-bold rounded-xl disabled:opacity-50">Confirm</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinishWorkout, onAddCustomExercise, onSwapExercise }) => {
   const [isAdding, setIsAdding] = useState(false);
+  const [exerciseToSkip, setExerciseToSkip] = useState<Exercise | null>(null);
+  const [pendingExercises, setPendingExercises] = useState<PendingExercise[]>([]);
+  const [skippedIds, setSkippedIds] = useState<string[]>([]); // Locally track skipped in this view
+
+  // Fetch pending exercises on mount, filtering for THIS workout ID
+  useEffect(() => {
+      setPendingExercises(getPendingExercises(plan.id));
+  }, [plan.id]);
   
   // Basic Info
   const [customName, setCustomName] = useState('');
@@ -41,12 +123,17 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
       return { ...ex, originalId: ex.id };
   });
 
+  // MERGE PENDING EXERCISES
+  // We filter out pending items that are already in the session (customExercises) to avoid dupes
+  const activePending = pendingExercises.filter(p => !session.customExercises.find(c => c.id === p.exerciseId));
+
   const fullList = [...renderedExercises, ...(session.customExercises || [])];
 
-  const warmups = fullList.filter(e => e.isWarmup);
-  const mainLifts = fullList.filter(e => !e.isWarmup);
+  const warmups = fullList.filter(e => e.isWarmup && !skippedIds.includes(e.id));
+  const mainLifts = fullList.filter(e => !e.isWarmup && !skippedIds.includes(e.id));
 
-  const isAllComplete = fullList.every(ex => {
+  // Determine if all *visible* exercises are complete
+  const isAllComplete = fullList.filter(e => !skippedIds.includes(e.id)).every(ex => {
     const logs = session.completedExercises[ex.id] || [];
     return logs.length >= ex.sets;
   });
@@ -117,6 +204,28 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
       setCustomMotion('press');
   };
 
+  const handleSkipConfirm = (reason: string, targetWorkoutId?: string) => {
+      if (!exerciseToSkip) return;
+      
+      saveSkippedExercise(exerciseToSkip.id, reason, targetWorkoutId);
+      
+      // Hide locally
+      setSkippedIds([...skippedIds, exerciseToSkip.id]);
+      setExerciseToSkip(null);
+  };
+
+  const handleAddPending = (pending: PendingExercise) => {
+      // Find full definition from ALL_WORKOUTS import
+      const allEx = ALL_WORKOUTS.flatMap(w => w.exercises);
+      const found = allEx.find(e => e.id === pending.exerciseId);
+      if (found) {
+          const exerciseToAdd = { ...found, pendingReason: pending.reason };
+          onAddCustomExercise(exerciseToAdd);
+          // Remove from pending list locally
+          setPendingExercises(prev => prev.filter(p => p.exerciseId !== pending.exerciseId));
+      }
+  };
+
   const muscleOptions: MuscleGroup[] = ['Chest', 'Back', 'Legs', 'Shoulders', 'Triceps', 'Biceps', 'Abs', 'Other'];
   const motionOptions: MotionType[] = ['press', 'pull', 'hinge', 'curl', 'raise', 'fly', 'hold'];
 
@@ -151,6 +260,11 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
                 <h3 className={`font-bold ${isComplete ? 'text-gray-400 line-through' : exercise.isWarmup ? 'text-orange-100' : 'text-white'}`}>
                     {exercise.name}
                 </h3>
+                {exercise.pendingReason && (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-orange-300 font-bold uppercase tracking-wider">
+                        <Calendar size={10} /> Pending: {exercise.pendingReason}
+                    </div>
+                )}
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                     {isCardio && <Footprints size={12} className="text-blue-400"/>}
                     <p className={`text-xs ${exercise.isWarmup ? 'text-orange-400/70' : 'text-gray-400'}`}>
@@ -162,13 +276,24 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
                 </div>
             </div>
             
-            <div className={`${exercise.isWarmup ? 'text-orange-500' : 'text-gray-500'} group-hover:text-white transition-colors`}>
-                {isComplete ? <CheckCircle className="text-gym-success" size={20} /> : <ChevronRight size={20} />}
+            <div className="flex items-center gap-3">
+                {!isComplete && !exercise.isWarmup && (
+                    <div 
+                        onClick={(e) => { e.stopPropagation(); setExerciseToSkip(exercise); }}
+                        className="p-2 text-gray-600 hover:text-red-400 hover:bg-gym-700 rounded-full transition-colors"
+                        title="Skip Exercise"
+                    >
+                        <SkipForward size={18} />
+                    </div>
+                )}
+                <div className={`${exercise.isWarmup ? 'text-orange-500' : 'text-gray-500'} group-hover:text-white transition-colors`}>
+                    {isComplete ? <CheckCircle className="text-gym-success" size={20} /> : <ChevronRight size={20} />}
+                </div>
             </div>
             </button>
             
             {hasAlternatives && onSwapExercise && !exercise.isWarmup && (
-                <div className="absolute top-4 right-12 z-20">
+                <div className="absolute top-4 right-20 z-20">
                     {isSwapped ? (
                          <button 
                             onClick={(e) => { e.stopPropagation(); onSwapExercise(originalId, originalId); }}
@@ -205,6 +330,31 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
 
       <div className="flex-1 overflow-y-auto pb-32 no-scrollbar">
         
+        {/* PENDING EXERCISES SECTION */}
+        {activePending.length > 0 && (
+            <div className="mb-6 bg-blue-900/10 border border-blue-500/30 rounded-xl p-4 animate-in slide-in-from-top-4">
+                <h3 className="text-blue-400 font-bold text-xs uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <AlertCircle size={12} /> Pending From Past Sessions
+                </h3>
+                <div className="space-y-2">
+                    {activePending.map((p, i) => (
+                        <div key={i} className="flex justify-between items-center bg-gym-900/80 p-3 rounded-lg border border-gym-700">
+                            <div>
+                                <p className="text-xs text-white font-bold">{p.exerciseId.split('_').map(s=>s.charAt(0).toUpperCase()+s.slice(1)).join(' ')}</p>
+                                <p className="text-[10px] text-gray-500">Reason: {p.reason}</p>
+                            </div>
+                            <button 
+                                onClick={() => handleAddPending(p)}
+                                className="px-3 py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded hover:bg-blue-500"
+                            >
+                                Add to Today
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
         {/* Warmups */}
         {warmups.length > 0 && (
             <div className="mb-6 animate-in slide-in-from-left-2">
@@ -352,6 +502,14 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
           {isAllComplete ? 'Finish Workout' : 'End Workout Early'}
         </button>
       </div>
+
+      {exerciseToSkip && (
+          <SkipModal 
+            exercise={exerciseToSkip} 
+            onClose={() => setExerciseToSkip(null)} 
+            onConfirm={handleSkipConfirm} 
+          />
+      )}
     </div>
   );
 };

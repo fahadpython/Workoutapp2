@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
-import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge } from 'lucide-react';
+import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau, saveExerciseNote, getExerciseNote, wasSkippedLastSession, saveSkippedExercise } from '../services/storageService';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -16,29 +16,138 @@ interface Props {
   onUpdateWater: (amount: number) => void;
 }
 
+// --- SUB-COMPONENT: SMART LOG BAR ---
+const SmartLogBar: React.FC<{
+    lastWeight: number;
+    lastReps: number;
+    onFill: (w: number, r: number) => void;
+}> = ({ lastWeight, lastReps, onFill }) => {
+    const [isListening, setIsListening] = useState(false);
+    
+    // Voice Recognition Setup
+    const startListening = () => {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("Voice features not supported on this browser.");
+            return;
+        }
+        
+        const recognition = new (window as any).webkitSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+        
+        setIsListening(true);
+        
+        recognition.onresult = (event: any) => {
+            const text = event.results[0][0].transcript;
+            console.log("Heard:", text);
+            
+            // Regex to find numbers. Expected: "80 for 10", "100 kg 5 reps", "80 10"
+            const numbers = text.match(/(\d+(\.\d+)?)/g);
+            
+            if (numbers && numbers.length >= 2) {
+                const w = parseFloat(numbers[0]);
+                const r = parseFloat(numbers[1]);
+                onFill(w, r);
+            } else if (numbers && numbers.length === 1) {
+                // Assume weight only if one number
+                onFill(parseFloat(numbers[0]), lastReps || 0);
+            }
+            
+            setIsListening(false);
+        };
+        
+        recognition.onerror = () => setIsListening(false);
+        recognition.onend = () => setIsListening(false);
+        
+        recognition.start();
+    };
+
+    return (
+        <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+            <button 
+                onClick={startListening}
+                className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-xs whitespace-nowrap transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gym-800 text-gym-accent border border-gym-accent/30'}`}
+            >
+                {isListening ? <MicOff size={14}/> : <Mic size={14}/>} {isListening ? 'Listening...' : 'Smart Mic'}
+            </button>
+            
+            {lastWeight > 0 && (
+                <>
+                    <button 
+                        onClick={() => onFill(lastWeight, lastReps)}
+                        className="px-3 py-2 bg-gym-800 border border-gym-700 text-gray-300 rounded-lg text-xs font-bold whitespace-nowrap"
+                    >
+                        Last: {lastWeight}x{lastReps}
+                    </button>
+                    <button 
+                        onClick={() => onFill(lastWeight + 2.5, lastReps)}
+                        className="px-3 py-2 bg-gym-800 border border-gym-700 text-green-400 rounded-lg text-xs font-bold whitespace-nowrap"
+                    >
+                        +2.5kg
+                    </button>
+                    <button 
+                        onClick={() => onFill(lastWeight - 2.5, lastReps)}
+                        className="px-3 py-2 bg-gym-800 border border-gym-700 text-orange-400 rounded-lg text-xs font-bold whitespace-nowrap"
+                    >
+                        -2.5kg
+                    </button>
+                </>
+            )}
+        </div>
+    );
+};
+
 // --- SUB-COMPONENT: PYRAMID CALCULATOR ---
 const PyramidCalculator: React.FC<{ 
     currentBest: number, 
+    workingSetsCount: number,
     onFill: (w: number, r: number) => void 
-}> = ({ currentBest, onFill }) => {
+}> = ({ currentBest, workingSetsCount, onFill }) => {
+    // Default to the auto-pilot recommendation or reasonable default
     const [targetWeight, setTargetWeight] = useState(currentBest > 0 ? currentBest : 60);
     const [targetReps, setTargetReps] = useState(8);
 
-    const round = (num: number) => Math.round(num / 2.5) * 2.5;
+    const round = (num: number) => Math.round(num / 1.25) * 1.25; // Round to plate
 
-    // Algorithm: Reverse Engineering
-    const workingSets = [
-        { type: 'Entry', label: 'Set 1: First Working', weight: round(targetWeight * 0.80), reps: targetReps + 3, pct: '80%' },
-        { type: 'Build', label: 'Set 2: Heavy Build-up', weight: round(targetWeight * 0.90), reps: targetReps + 1, pct: '90%' },
-        { type: 'Top', label: 'Set 3: TOP SET (Goal)', weight: targetWeight, reps: targetReps, pct: '100%' },
-    ];
+    // Algorithm: Standard Pyramid (Ramp Up)
+    // The last set is the Target Top Set.
+    // Previous sets act as feeders/volume.
+    const workingSets = [];
+    
+    // We want the last set to be 100%.
+    // Steps depend on total sets. e.g. 3 sets -> 80%, 90%, 100%
+    const stepSize = 0.1; // 10% jumps
+    
+    for (let i = 0; i < workingSetsCount; i++) {
+        // Calculate percentage for this set
+        // If i = count-1 (last one), pct = 1.0
+        // i = count-2, pct = 0.9
+        const setsFromEnd = (workingSetsCount - 1) - i;
+        const pct = 1.0 - (setsFromEnd * stepSize);
+        
+        // Ensure we don't go too low (e.g. if 10 sets)
+        const safePct = Math.max(0.5, pct); 
+        
+        const isTopSet = i === workingSetsCount - 1;
+        const label = isTopSet ? 'TOP SET (Target)' : `Set ${i + 1}: Build-up`;
+        
+        // Reps: Usually lighter sets have slightly more reps or same? 
+        // Let's keep reps constant for standard hypertrophy pyramid or +1/2 for lighter
+        const reps = isTopSet ? targetReps : targetReps + (setsFromEnd * 2);
+
+        workingSets.push({
+            type: isTopSet ? 'Top' : 'Build',
+            label: label,
+            weight: round(targetWeight * safePct),
+            reps: reps,
+            pct: `${Math.round(safePct * 100)}%`
+        });
+    }
 
     const warmups = [];
-    if (targetWeight > 40) warmups.push({ label: 'Warmup: Movement', weight: 20, reps: 15, pct: 'Bar' });
-    const w1 = round(targetWeight * 0.4);
-    if (w1 > 20) warmups.push({ label: 'Warmup: Light', weight: w1, reps: 10, pct: '40%' });
-    const w2 = round(targetWeight * 0.6);
-    warmups.push({ label: 'Warmup: Primer', weight: w2, reps: 3, pct: '60%' });
+    if (targetWeight > 20) warmups.push({ label: 'Warmup: Activation', weight: round(targetWeight * 0.5), reps: 10, pct: '50%' });
+    if (targetWeight > 40) warmups.push({ label: 'Warmup: Primer', weight: round(targetWeight * 0.7), reps: 3, pct: '70%' });
 
     return (
         <div className="mb-4 bg-gym-900 rounded-xl border border-gym-700 overflow-hidden animate-in slide-in-from-top-2">
@@ -46,13 +155,13 @@ const PyramidCalculator: React.FC<{
                 <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
                     <Calculator size={14} className="text-gym-accent" /> Pyramid Planner
                 </h4>
-                <span className="text-[10px] text-gray-500">Rev. Engineering</span>
+                <span className="text-[10px] text-gray-500">Based on {workingSetsCount} Working Sets</span>
             </div>
             
             <div className="p-4">
                 <div className="flex gap-4 mb-4 items-end">
                     <div className="flex-1">
-                        <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Target Top Weight</label>
+                        <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Desired Top Weight</label>
                         <input 
                             type="number" 
                             value={targetWeight}
@@ -61,7 +170,7 @@ const PyramidCalculator: React.FC<{
                         />
                     </div>
                     <div className="flex-1">
-                        <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Target Top Reps</label>
+                        <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Goal Reps</label>
                         <input 
                             type="number" 
                             value={targetReps}
@@ -72,7 +181,8 @@ const PyramidCalculator: React.FC<{
                 </div>
 
                 <div className="space-y-1">
-                    {/* Warmups */}
+                    {/* Warmups Header */}
+                    <div className="text-[10px] text-gray-500 uppercase font-bold mb-1 mt-2">Warmups (Optional)</div>
                     {warmups.map((set, i) => (
                         <div key={`w-${i}`} className="flex justify-between items-center p-2 rounded hover:bg-gym-800/50 group">
                             <div className="flex items-center gap-2">
@@ -91,7 +201,8 @@ const PyramidCalculator: React.FC<{
                     
                     <div className="my-2 border-t border-dashed border-gym-700"></div>
 
-                    {/* Working Sets */}
+                    {/* Working Sets Header */}
+                    <div className="text-[10px] text-gym-accent uppercase font-bold mb-1">Working Sets</div>
                     {workingSets.map((set, i) => (
                         <div key={`wk-${i}`} className={`flex justify-between items-center p-2 rounded hover:bg-gym-800/50 group ${set.type === 'Top' ? 'bg-gym-accent/10 border border-gym-accent/20' : ''}`}>
                             <div className="flex items-center gap-2">
@@ -320,7 +431,9 @@ const ExerciseCard: React.FC<Props> = ({
   const [setMode, setSetMode] = useState<0 | 1 | 2>(0);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showStepsModal, setShowStepsModal] = useState(false);
   const [showPyramidCalc, setShowPyramidCalc] = useState(false);
+  const [showRpeInfo, setShowRpeInfo] = useState(false); // RPE Tooltip
   const [estCalories, setEstCalories] = useState(0);
   const [recommendation, setRecommendation] = useState<CoachRecommendation | null>(null);
   const [coachFeedback, setCoachFeedback] = useState<string | null>(null);
@@ -328,12 +441,22 @@ const ExerciseCard: React.FC<Props> = ({
   const [plateauAlert, setPlateauAlert] = useState<string | null>(null);
   const [showLeveler, setShowLeveler] = useState(false);
   const [showMotionTracker, setShowMotionTracker] = useState(false);
-  const [bestHistorical1RM, setBestHistorical1RM] = useState(0);
+  const [sessionBest1RM, setSessionBest1RM] = useState(0); // Track Best 1RM of CURRENT session
+  const [showFacts, setShowFacts] = useState(false);
+  const [showPenaltyPrompt, setShowPenaltyPrompt] = useState(false);
+  const [skippedAlert, setSkippedAlert] = useState(false);
   
   // Hydration State
   const [waterDebt, setWaterDebt] = useState(0);
   const [showWaterReminder, setShowWaterReminder] = useState(false);
   const [waterReminderAmount, setWaterReminderAmount] = useState(0);
+
+  // Notes State
+  const [note, setNote] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
+
+  // Next Set Recommendation (Intra-set)
+  const [nextSetSuggestion, setNextSetSuggestion] = useState<string | null>(null);
 
   const isCardio = exercise.type === 'cardio';
   // If it's timed (like Plank), treat metric2 as Time
@@ -342,6 +465,12 @@ const ExerciseCard: React.FC<Props> = ({
   useEffect(() => {
     const hist = getExerciseHistory(exercise.id);
     setHistory(hist);
+    setNote(getExerciseNote(exercise.id));
+    
+    // Check skipped status
+    if (wasSkippedLastSession(exercise.id)) {
+        setSkippedAlert(true);
+    }
     
     // AI Coach Logic
     if (!isCardio && !exercise.isWarmup) {
@@ -353,17 +482,6 @@ const ExerciseCard: React.FC<Props> = ({
     const pCheck = checkPlateau(exercise.id);
     if (pCheck.isStalled) {
         setPlateauAlert(pCheck.recommendation);
-    }
-
-    // 1RM Projector: Calculate Historical Best
-    if (hist && hist.logs.length > 0 && !isCardio) {
-        let max = 0;
-        hist.logs.forEach(log => {
-            // Epley Formula: w * (1 + r/30)
-            const oneRM = log.weight * (1 + (log.reps / 30));
-            if (oneRM > max) max = oneRM;
-        });
-        setBestHistorical1RM(max);
     }
   }, [exercise.id, completedSets.length, isCardio]);
 
@@ -385,17 +503,10 @@ const ExerciseCard: React.FC<Props> = ({
   };
 
   const calculateWaterLoss = (m1: number, m2: number) => {
-      // Heuristic for sweat loss
-      // Base: Weight * Reps * Factor
-      // Compound Factor: 1.5x
-      // Cardio: m2 (mins) * 10
-      
       let loss = 0;
       if (isCardio) {
-          loss = m2 * 10; // 10ml per min of cardio
+          loss = m2 * 10; 
       } else {
-          // Weight * Reps * 0.04 (approx 40ml for 1000kg vol)
-          // Compound multiplier
           const vol = m1 * m2;
           const compoundMult = exercise.isCompound ? 1.5 : 1.0;
           loss = vol * 0.04 * compoundMult;
@@ -403,15 +514,52 @@ const ExerciseCard: React.FC<Props> = ({
       return Math.round(loss);
   };
 
+  const checkPenaltyCondition = (m1: number, m2: number) => {
+      // Logic: If it's the LAST scheduled set, and performance is below target
+      if (exercise.isWarmup || isCardio) return false;
+      if (completedSets.length !== exercise.sets - 1) return false; // Only trigger on final set (before logging it)
+      
+      let targetWeight = recommendation?.targetWeight || (history?.lastSession?.topSet.weight || 0);
+      let targetReps = getTargetRepsInt();
+      
+      if (m1 < targetWeight * 0.9 || m2 < targetReps - 2) {
+          return true;
+      }
+      return false;
+  };
+
+  const confirmPenaltySet = () => {
+      // Add logic to just close modal and let user continue working out (essentially adding a set)
+      setShowPenaltyPrompt(false);
+      // We don't need to do anything else, the user hasn't logged the set yet or we can log it and keep card open.
+      // Actually, log the current set, but don't close the card even if set count reached.
+      // Just showing a toast "Penalty Set Added"
+      setCoachFeedback("Penalty Set Unlocked. Do one more!");
+      setTimeout(() => setCoachFeedback(null), 3000);
+  };
+
   const handleFinishSet = () => {
-    // If it's a warmup, we might bypass inputs
     let m1 = parseFloat(metric1) || 0;
     let m2 = parseFloat(metric2) || 0;
     
-    // Auto-fill for warmup "One Click" logic
     if (exercise.isWarmup) {
-        m1 = 0; // Bodyweight/Warmup
+        m1 = 0; 
         m2 = getTargetRepsInt(); 
+    }
+
+    // --- PENALTY CHECK INTERCEPT ---
+    if (checkPenaltyCondition(m1, m2) && !showPenaltyPrompt) {
+        setShowPenaltyPrompt(true);
+        return; // Stop here, wait for user input
+    }
+
+    // --- 1RM SESSION TRACKING ---
+    if (!isCardio && !exercise.isWarmup && m1 > 0 && m2 > 0) {
+        // Epley Formula: w * (1 + r/30)
+        const current1RM = Math.round(m1 * (1 + (m2 / 30)));
+        if (current1RM > sessionBest1RM) {
+            setSessionBest1RM(current1RM);
+        }
     }
 
     // --- HYDRATION LOGIC ---
@@ -420,33 +568,44 @@ const ExerciseCard: React.FC<Props> = ({
         const newDebt = waterDebt + loss;
         setWaterDebt(newDebt);
 
-        // Thresholds: Sip (>60ml), Gulp (>150ml)
         if (newDebt > 120) {
-            setWaterReminderAmount(Math.ceil(newDebt / 50) * 50); // Round to nearest 50
+            setWaterReminderAmount(Math.ceil(newDebt / 50) * 50); 
             setShowWaterReminder(true);
         }
+    }
+
+    // --- NEXT SET SUGGESTION LOGIC ---
+    if (!exercise.isWarmup && !isCardio) {
+        let suggestion = "";
+        const targetReps = getTargetRepsInt();
+        // Simple logic based on RPE
+        if (rpe <= 6) {
+            suggestion = `Next: ${m1 + 2.5}kg for ${targetReps} reps`;
+        } else if (rpe >= 9) {
+            suggestion = `Next: ${m1}kg or Drop to ${m1 - 2.5}kg for ${targetReps} reps`;
+        } else {
+            suggestion = `Next: Keep ${m1}kg for ${targetReps} reps`;
+        }
+        setNextSetSuggestion(suggestion);
     }
 
     const isDrop = setMode === 1;
     const isMonster = setMode === 2;
 
-    onLogSet(m1, m2, isDrop, isMonster, rpe); // Pass RPE
+    onLogSet(m1, m2, isDrop, isMonster, rpe); 
     setShowMotionTracker(false);
     
-    // Provide Coach Feedback
     if (!exercise.isWarmup && !isCardio) {
         const feedback = analyzeSetPerformance(exercise, m1, m2);
         setCoachFeedback(feedback);
         setTimeout(() => setCoachFeedback(null), 4000);
     }
     
-    // LOGIC: Monster Set = Prompt next exercise. Drop Set = Prompt new weight (same exercise).
     if (isMonster) {
         setShowMonsterPrompt(true);
     } else if (isDrop) {
-        // Drop Set Logic: Reduce weight automatically by ~20%
         if (m1 > 0) {
-            const droppedWeight = Math.max(0, Math.floor((m1 * 0.8) / 1.25) * 1.25); // Drop 20%, snap to 1.25kg
+            const droppedWeight = Math.max(0, Math.floor((m1 * 0.8) / 1.25) * 1.25);
             setMetric1(droppedWeight.toString());
             setCoachFeedback(`Weight dropped to ${droppedWeight}kg. GO AGAIN!`);
             setTimeout(() => setCoachFeedback(null), 3000);
@@ -456,6 +615,11 @@ const ExerciseCard: React.FC<Props> = ({
     } else {
         setSetMode(0); 
     }
+  };
+
+  const handleSaveNote = () => {
+      saveExerciseNote(exercise.id, note);
+      // Optional feedback
   };
 
   const toggleSetMode = () => {
@@ -506,14 +670,25 @@ const ExerciseCard: React.FC<Props> = ({
 
   const totalBurned = completedSets.reduce((acc, s) => acc + (s.calories || 0), 0);
   
-  // --- 1RM CALCULATIONS ---
+  // --- 1RM LIVE CALCULATION ---
   const currentWeight = parseFloat(metric1) || 0;
   const currentReps = parseFloat(metric2) || 0;
   const projected1RM = (!exercise.isWarmup && !isCardio && currentWeight > 0 && currentReps > 0)
      ? Math.round(currentWeight * (1 + (currentReps / 30)))
      : 0;
   
-  const isBreakingRecord = bestHistorical1RM > 0 && projected1RM > bestHistorical1RM;
+  // Only display if this is the "Top Set" (i.e., heavier than previous recorded best in session)
+  // OR if no session best yet.
+  const isBestSet = projected1RM > sessionBest1RM;
+
+  // Calculate historic best for PR check
+  const historicBest1RM = history?.logs.reduce((max, log) => {
+     // Skip cardio logs for 1RM calculation if types mixed, though unlikely with same ID
+     const e1rm = Math.round(log.weight * (1 + (log.reps / 30)));
+     return e1rm > max ? e1rm : max;
+  }, 0) || 0;
+
+  const isBreakingRecord = projected1RM > historicBest1RM && historicBest1RM > 0;
   
   const getRPEColor = (val: number) => {
       if (val < 7) return 'text-green-400';
@@ -561,11 +736,51 @@ const ExerciseCard: React.FC<Props> = ({
                   setShowWaterReminder(false); 
               }}
               onSkip={() => {
-                  // Keep half the debt so it reminds sooner next time, but doesn't nag instantly
                   setWaterDebt(prev => prev / 2);
                   setShowWaterReminder(false);
               }}
           />
+      )}
+
+      {/* --- PENALTY SET MODAL --- */}
+      {showPenaltyPrompt && (
+          <div className="fixed inset-0 z-[75] bg-gym-900/95 flex flex-col items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-orange-500/20 p-6 rounded-full mb-6 border-2 border-orange-500 animate-pulse">
+                  <AlertOctagon size={48} className="text-orange-400" />
+              </div>
+              <h3 className="text-2xl font-black text-white mb-2 uppercase text-center">Performance Low</h3>
+              <p className="text-gray-300 mb-8 text-center">You missed your target numbers. To trigger growth, the algorithm requires one extra set.</p>
+              
+              <button 
+                  onClick={confirmPenaltySet}
+                  className="w-full bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-orange-900/40 mb-4 flex items-center justify-center gap-2"
+              >
+                  <CheckCircle size={20} /> Unlock Bonus Set
+              </button>
+              
+              <button 
+                  onClick={() => {
+                      // Skip with reason logic could be here, but for now just proceed
+                      setShowPenaltyPrompt(false);
+                      // Log the set anyway without bonus
+                      onLogSet(parseFloat(metric1)||0, parseFloat(metric2)||0, setMode===1, setMode===2, rpe);
+                  }}
+                  className="text-gray-500 font-bold hover:text-white transition-colors"
+              >
+                  Skip (Accept Defeat)
+              </button>
+          </div>
+      )}
+
+      {/* --- SKIPPED ALERT --- */}
+      {skippedAlert && (
+          <div className="mb-4 bg-orange-900/20 border border-orange-500/30 p-3 rounded-lg flex items-start gap-3 animate-in slide-in-from-top-2">
+             <AlertTriangle className="text-orange-400 flex-shrink-0 mt-1" size={18} />
+             <div>
+                 <p className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-1">Missed Session Alert</p>
+                 <p className="text-sm text-gray-300">You skipped this last week. Give it 110% effort today to stay on track.</p>
+             </div>
+          </div>
       )}
 
       {/* --- LEVELER MODAL --- */}
@@ -653,36 +868,112 @@ const ExerciseCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* --- INFO / CUES / ANALYTICS --- */}
-      
-      {/* --- NEW BENCH ANGLE BUTTON (If Applicable) --- */}
-      {exercise.benchAngle !== undefined && (
-          <button 
-            onClick={() => setShowLeveler(true)}
-            className="mb-4 w-full py-3 bg-gym-800 border border-gym-700 text-gym-accent font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform"
-          >
-             <Ruler size={18} /> Calibrate Bench ({exercise.benchAngle}°)
-          </button>
-      )}
+      {/* --- BUTTON GRID: Bench Angle / Pyramid / Steps / Notes --- */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+          {exercise.benchAngle !== undefined && (
+              <button 
+                onClick={() => setShowLeveler(true)}
+                className="col-span-2 py-3 bg-gym-800 border border-gym-700 text-gym-accent font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform"
+              >
+                 <Ruler size={18} /> Calibrate Bench ({exercise.benchAngle}°)
+              </button>
+          )}
 
-      {/* --- NEW PYRAMID CALCULATOR TOGGLE --- */}
-      {!isCardio && !exercise.isWarmup && (
+          {!isCardio && !exercise.isWarmup && (
+              <button 
+                onClick={() => setShowPyramidCalc(!showPyramidCalc)}
+                className={`py-3 border border-gym-700 font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform text-xs
+                    ${showPyramidCalc ? 'bg-gym-accent border-gym-accent text-white' : 'bg-gym-800 text-gym-accent'}
+                `}
+              >
+                 <Calculator size={16} /> Pyramid Calc
+              </button>
+          )}
+
           <button 
-            onClick={() => setShowPyramidCalc(!showPyramidCalc)}
-            className={`mb-4 w-full py-3 border border-gym-700 font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform
-                ${showPyramidCalc ? 'bg-gym-accent border-gym-accent text-white' : 'bg-gym-800 text-gym-accent'}
+            onClick={() => setShowStepsModal(true)}
+            className="py-3 bg-gym-800 border border-gym-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform text-xs hover:bg-gym-700"
+          >
+             <BookOpen size={16} className="text-orange-400" /> Step-by-Step
+          </button>
+
+          <button 
+            onClick={() => setShowNotes(!showNotes)}
+            className={`py-3 border border-gym-700 font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform text-xs
+                ${showNotes ? 'bg-gym-700 text-white' : 'bg-gym-800 text-gray-300'}
             `}
           >
-             <Calculator size={18} /> {showPyramidCalc ? 'Hide Pyramid Calculator' : 'Pyramid Set Calculator'}
+             <Edit3 size={16} /> My Notes
           </button>
-      )}
+      </div>
       
       {/* PYRAMID CALCULATOR COMPONENT */}
       {showPyramidCalc && (
           <PyramidCalculator 
-             currentBest={lastSession?.weight || recommendation?.targetWeight || 0} 
+             currentBest={recommendation?.targetWeight || lastSession?.weight || 0}
+             workingSetsCount={exercise.sets} 
              onFill={(w, r) => { setMetric1(w.toString()); setMetric2(r.toString()); }}
           />
+      )}
+
+      {/* NOTES COMPONENT */}
+      {showNotes && (
+          <div className="mb-4 bg-gym-800/50 p-3 rounded-xl border border-gym-700 animate-in slide-in-from-top-2">
+              <label className="text-[10px] uppercase font-bold text-gray-500 mb-2 block">Personal Notes</label>
+              <textarea 
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  onBlur={handleSaveNote}
+                  placeholder="Add cues, seat settings, or reminders..."
+                  className="w-full bg-gym-900 border border-gym-600 rounded p-3 text-sm text-white focus:border-gym-accent focus:outline-none min-h-[80px]"
+              />
+          </div>
+      )}
+
+      {/* STEPS MODAL */}
+      {showStepsModal && (
+          <div className="fixed inset-0 z-[80] bg-gym-900 flex flex-col p-6 animate-in slide-in-from-bottom-5">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2"><BookOpen className="text-orange-400"/> Execution Guide</h3>
+                  <button onClick={() => setShowStepsModal(false)} className="p-2 bg-gym-800 rounded-full text-gray-400 hover:text-white"><X size={20}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-4">
+                  {exercise.detailedSteps && exercise.detailedSteps.length > 0 ? (
+                      exercise.detailedSteps.map((step, idx) => (
+                          <div key={idx} className="flex gap-4">
+                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gym-800 border border-gym-700 flex items-center justify-center font-bold text-gym-accent text-sm">
+                                  {idx + 1}
+                              </div>
+                              <p className="text-gray-300 text-sm leading-relaxed pt-1.5">{step}</p>
+                          </div>
+                      ))
+                  ) : (
+                      <p className="text-center text-gray-500 italic mt-10">Detailed steps not available for this exercise yet.</p>
+                  )}
+              </div>
+              <button onClick={() => setShowStepsModal(false)} className="mt-4 w-full py-4 bg-gym-accent text-white font-bold rounded-xl">Got it</button>
+          </div>
+      )}
+
+      {/* FACTS SECTION */}
+      {exercise.facts && exercise.facts.length > 0 && (
+          <div className="mb-4">
+              <button 
+                onClick={() => setShowFacts(!showFacts)}
+                className="flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                  <Lightbulb size={14} /> Did You Know?
+              </button>
+              {showFacts && (
+                  <div className="mt-2 bg-blue-900/20 border border-blue-500/30 p-3 rounded-lg animate-in fade-in">
+                      <ul className="list-disc list-inside space-y-1">
+                          {exercise.facts.map((fact, i) => (
+                              <li key={i} className="text-xs text-blue-200 leading-relaxed">{fact}</li>
+                          ))}
+                      </ul>
+                  </div>
+              )}
+          </div>
       )}
 
       <button 
@@ -751,6 +1042,13 @@ const ExerciseCard: React.FC<Props> = ({
                   {/* INPUTS: HIDDEN IF WARMUP */}
                   {!exercise.isWarmup ? (
                       <>
+                        {/* SMART LOG TOOLBAR */}
+                        <SmartLogBar 
+                            lastWeight={lastSession?.weight || 0}
+                            lastReps={lastSession?.reps || 0}
+                            onFill={(w, r) => { setMetric1(w.toString()); setMetric2(r.toString()); }}
+                        />
+
                         <div className="flex gap-4 mb-4 relative z-10">
                           <div className="w-1/2">
                               <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
@@ -783,13 +1081,21 @@ const ExerciseCard: React.FC<Props> = ({
                         {!isCardio && (
                             <div className="mb-4 relative z-10">
                                 <div className="flex justify-between items-end mb-2">
-                                    <label className="text-xs text-gray-400 font-bold uppercase flex items-center gap-1">
-                                        <Gauge size={12}/> RPE (Effort)
+                                    <label className="text-xs text-gray-400 font-bold uppercase flex items-center gap-1 cursor-pointer" onClick={() => setShowRpeInfo(!showRpeInfo)}>
+                                        <Gauge size={12}/> RPE (Effort) <HelpCircle size={10} className="text-gym-accent" />
                                     </label>
                                     <span className={`text-xs font-bold ${getRPEColor(rpe)}`}>
                                         {rpe} / 10 - {getRPEDescription(rpe)}
                                     </span>
                                 </div>
+                                {showRpeInfo && (
+                                    <div className="bg-gym-900/90 p-2 rounded border border-gym-700 text-[10px] text-gray-300 mb-2 animate-in fade-in">
+                                        <strong>RPE (Rate of Perceived Exertion)</strong>
+                                        <br/>10 = Failure (No reps left).
+                                        <br/>9 = 1 Rep in Reserve (Could do 1 more).
+                                        <br/>8 = 2 Reps in Reserve (Could do 2 more).
+                                    </div>
+                                )}
                                 <input 
                                     type="range" 
                                     min="1" 
@@ -806,16 +1112,23 @@ const ExerciseCard: React.FC<Props> = ({
                             </div>
                         )}
 
-                        {/* 1RM PROJECTOR */}
-                        {!isCardio && (
+                        {/* NEXT SET SUGGESTION (If Intra-Set) */}
+                        {nextSetSuggestion && completedSets.length > 0 && (
+                            <div className="mb-4 relative z-10 bg-blue-900/30 border border-blue-500/30 p-2 rounded-lg text-center animate-in fade-in">
+                                <p className="text-xs text-blue-200 font-bold">{nextSetSuggestion}</p>
+                            </div>
+                        )}
+
+                        {/* 1RM PROJECTOR (Only show if this set is significant or top set) */}
+                        {!isCardio && (isBestSet || completedSets.length === 0) && (
                             <div className={`mb-6 relative z-10 p-2 rounded-lg border transition-all duration-300 flex items-center justify-center gap-3 ${isBreakingRecord ? 'bg-gym-accent/20 border-gym-accent shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'bg-gym-900/50 border-gym-700/50'}`}>
                                 <Crown size={18} className={isBreakingRecord ? 'text-yellow-400 animate-bounce' : 'text-gray-600'} />
                                 <div className="text-center">
                                     <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
-                                        {projected1RM > 0 ? 'Theoretical 1 Rep Max' : 'Current Record 1RM'}
+                                        Session Best e1RM
                                     </p>
                                     <p className={`text-lg font-black ${isBreakingRecord ? 'text-white' : 'text-gray-300'}`}>
-                                        {projected1RM > 0 ? projected1RM : (bestHistorical1RM > 0 ? bestHistorical1RM : '--')} <span className="text-xs text-gray-500 font-normal">kg</span>
+                                        {projected1RM > 0 ? projected1RM : (sessionBest1RM > 0 ? sessionBest1RM : '--')} <span className="text-xs text-gray-500 font-normal">kg</span>
                                     </p>
                                 </div>
                                 {isBreakingRecord && (

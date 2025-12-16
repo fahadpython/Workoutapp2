@@ -35,6 +35,8 @@ export interface Exercise {
   setup: string; // New: Detailed Setup
   visualize: string; // New: Mental Cue
   action: string; // New: Execution instructions
+  detailedSteps?: string[]; // New: Step-by-step checklist
+  facts?: string[]; // New: Fun facts or bio-mechanic trivia
   muscleFocus: string; // Display text like "Upper Chest"
   targetGroup: MuscleGroup; // For analytics aggregation
   feeling: string; // "How it should feel"
@@ -48,6 +50,7 @@ export interface Exercise {
   alternatives?: Exercise[]; // Swappable exercises
   swapLabel?: string; // Reason for swap (e.g. "Better Isolation")
   benchAngle?: number; // Optional: Required bench angle in degrees
+  pendingReason?: string; // New: If moved from another day
 }
 
 export interface WorkoutDay {
@@ -66,6 +69,7 @@ export interface SetLog {
   isDropSet?: boolean; 
   isMonsterSet?: boolean;
   calories?: number;
+  isPenaltySet?: boolean; // New: If added due to low performance
 }
 
 export interface ActiveTimer {
@@ -102,6 +106,20 @@ export interface HistoryLog {
   reps: number;
   rpe?: number; // New: RPE History
   setNumber: number;
+}
+
+export interface SkippedEntry {
+  exerciseId: string;
+  date: string; // When it was skipped
+  reason: string;
+}
+
+export interface PendingExercise {
+  originalDate: string;
+  targetWorkoutId?: string; // ID of the workout (e.g. 'pull_a')
+  targetDate?: string; // Legacy fallback
+  exerciseId: string;
+  reason: string;
 }
 
 export interface ExerciseHistory {

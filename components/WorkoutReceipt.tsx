@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { ReceiptData } from '../services/storageService';
-import { Share2, RotateCcw, Camera, Image as ImageIcon, X } from 'lucide-react';
+import { Share2, RotateCcw, Camera, Image as ImageIcon, X, Download } from 'lucide-react';
 
 interface Props {
   data: ReceiptData;
@@ -143,11 +143,13 @@ const WorkoutReceipt: React.FC<Props> = ({ data, onClose }) => {
                     {/* EXERCISE LIST */}
                     <div className="mb-4">
                         <div className="flex justify-between text-[10px] font-bold border-b border-black mb-2 pb-1">
-                            <span>ITEM</span>
+                            <span>ITEM (WARMUPS EXCLUDED)</span>
                             <span>BEST</span>
                         </div>
                         <div className="space-y-2">
-                            {data.exercises.map((ex, i) => (
+                            {data.exercises.length === 0 ? (
+                                <p className="text-xs text-center text-gray-500 italic py-2">No main lifts recorded.</p>
+                            ) : data.exercises.map((ex, i) => (
                                 <div key={i} className="flex justify-between items-baseline text-xs group">
                                     <div className="flex-1">
                                         <span className="font-bold uppercase block truncate w-40">{ex.name}</span>
@@ -200,26 +202,42 @@ const WorkoutReceipt: React.FC<Props> = ({ data, onClose }) => {
        </div>
 
        {/* ACTIONS */}
-       <div className="mt-8 flex gap-4 animate-in fade-in delay-500 z-10">
-           {!bgImage && (
-               <button 
-                 onClick={triggerCamera}
-                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-full shadow-lg hover:bg-blue-500 transition-colors"
-               >
-                   <Camera size={20} /> Photo Mode
-               </button>
+       <div className="mt-8 flex flex-wrap justify-center gap-4 animate-in fade-in delay-500 z-10 w-full max-w-sm">
+           {!bgImage ? (
+               <>
+                <button 
+                    onClick={triggerCamera}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-full shadow-lg hover:bg-blue-500 transition-colors"
+                >
+                    <Camera size={20} /> Photo Mode
+                </button>
+                <button 
+                    onClick={() => {
+                        // Simulating a download/save flow for standard view
+                        alert("To Save: Take a Screenshot now!");
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-white text-black font-bold rounded-full shadow-lg hover:bg-gray-200 transition-colors"
+                >
+                    <Download size={20} /> Save Image
+                </button>
+               </>
+           ) : (
+                <button 
+                    onClick={() => {
+                        // Simulating a download/save flow for photo view
+                        alert("To Save: Take a Screenshot of this photo card!");
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-white text-black font-bold rounded-full shadow-lg hover:bg-gray-200 transition-colors"
+                >
+                    <Download size={20} /> Save Photo
+                </button>
            )}
-           <button 
-             onClick={handleShare}
-             className="flex items-center gap-2 px-6 py-3 bg-white text-black font-bold rounded-full shadow-lg hover:bg-gray-200 transition-colors"
-           >
-               <Share2 size={20} /> Share
-           </button>
+           
            <button 
              onClick={onClose}
-             className="flex items-center gap-2 px-6 py-3 bg-gym-800 text-white font-bold rounded-full border border-gym-700 hover:bg-gym-700 transition-colors"
+             className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gym-800 text-white font-bold rounded-full border border-gym-700 hover:bg-gym-700 transition-colors"
            >
-               <RotateCcw size={20} /> Done
+               <RotateCcw size={20} /> Finish Workout
            </button>
        </div>
 
