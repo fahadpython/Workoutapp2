@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau, saveExerciseNote, getExerciseNote, wasSkippedLastSession, saveSkippedExercise } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff, AlertCircle } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff, AlertCircle, Film, ExternalLink } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -522,6 +522,9 @@ const ExerciseCard: React.FC<Props> = ({
   // Next Set Recommendation (Intra-set)
   const [nextSetSuggestion, setNextSetSuggestion] = useState<string | null>(null);
 
+  // Animation Modal
+  const [showAnimation, setShowAnimation] = useState(false);
+
   const isCardio = exercise.type === 'cardio';
   // If it's timed (like Plank), treat metric2 as Time
   const isTimed = exercise.isTimed || isCardio;
@@ -632,7 +635,8 @@ const ExerciseCard: React.FC<Props> = ({
         const newDebt = waterDebt + loss;
         setWaterDebt(newDebt);
 
-        if (newDebt > 120) {
+        // Lower threshold to 80ml (~3 sips) to make it more frequent and visible
+        if (newDebt > 80) {
             setWaterReminderAmount(Math.ceil(newDebt / 50) * 50); 
             setShowWaterReminder(true);
         }
@@ -836,6 +840,44 @@ const ExerciseCard: React.FC<Props> = ({
           </div>
       )}
 
+      {/* --- ANIMATION MODAL --- */}
+      {showAnimation && (
+          <div className="fixed inset-0 z-[80] bg-gym-900 flex flex-col p-6 animate-in slide-in-from-bottom-5">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2"><Film className="text-blue-400"/> Visual Demo</h3>
+                  <button onClick={() => setShowAnimation(false)} className="p-2 bg-gym-800 rounded-full text-gray-400 hover:text-white"><X size={20}/></button>
+              </div>
+              <div className="flex-1 flex flex-col items-center justify-center space-y-6">
+                  {exercise.gifUrl ? (
+                      <div className="w-full bg-white rounded-xl overflow-hidden shadow-2xl border-4 border-gym-700">
+                          <img src={exercise.gifUrl} alt={exercise.name} className="w-full h-auto object-cover" />
+                      </div>
+                  ) : (
+                      <div className="text-center max-w-xs">
+                          <div className="w-24 h-24 bg-gym-800 rounded-full flex items-center justify-center mx-auto mb-6 border border-gym-700">
+                              <Film size={40} className="text-gym-600" />
+                          </div>
+                          <h4 className="text-lg font-bold text-white mb-2">No Built-in Animation</h4>
+                          <p className="text-gray-400 text-sm mb-6">We don't have a stored animation for this specific exercise yet.</p>
+                          
+                          <a 
+                            href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(exercise.name + " exercise gif")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/40"
+                          >
+                              <ExternalLink size={20} /> Find Animation Online
+                          </a>
+                          <p className="text-[10px] text-gray-600 mt-4">Opens Google Images in a new tab.</p>
+                      </div>
+                  )}
+              </div>
+              {exercise.gifUrl && (
+                  <p className="text-center text-xs text-gray-500">Animation sourced from ExerciseDB</p>
+              )}
+          </div>
+      )}
+
       {/* --- SKIPPED ALERT --- */}
       {skippedAlert && (
           <div className="mb-4 bg-orange-900/20 border border-orange-500/30 p-3 rounded-lg flex items-start gap-3 animate-in slide-in-from-top-2">
@@ -932,7 +974,7 @@ const ExerciseCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* --- BUTTON GRID: Bench Angle / Pyramid / Steps / Notes --- */}
+      {/* --- BUTTON GRID: Bench Angle / Pyramid / Steps / Notes / Demo --- */}
       <div className="grid grid-cols-2 gap-2 mb-4">
           {exercise.benchAngle !== undefined && (
               <button 
@@ -959,6 +1001,13 @@ const ExerciseCard: React.FC<Props> = ({
             className="py-3 bg-gym-800 border border-gym-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform text-xs hover:bg-gym-700"
           >
              <BookOpen size={16} className="text-orange-400" /> Step-by-Step
+          </button>
+
+          <button 
+            onClick={() => setShowAnimation(true)}
+            className="py-3 bg-gym-800 border border-gym-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform text-xs hover:bg-gym-700"
+          >
+             <Film size={16} className="text-blue-400" /> Watch Demo
           </button>
 
           <button 

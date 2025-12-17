@@ -99,23 +99,56 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Stand with feet shoulder-width apart.', 
     visualize: 'Drawing giant circles on the walls.', 
     action: 'Rotate arms forward 20 times, then backward 20 times.',
-    muscleFocus: 'Shoulders', targetGroup: 'Warmup', feeling: 'Warmth in shoulder joints', isWarmup: true, pacer: PACER_FAST, metValue: 3.0, muscleSplit: { 'Shoulders': 100 }, motionType: 'raise', isCompound: false 
+    muscleFocus: 'Shoulders', targetGroup: 'Warmup', feeling: 'Warmth in shoulder joints', isWarmup: true, pacer: PACER_FAST, metValue: 3.0, muscleSplit: { 'Shoulders': 100 }, motionType: 'raise', isCompound: false,
+    detailedSteps: [
+        "Stand upright with your feet shoulder-width apart.",
+        "Extend your arms straight out to the sides at shoulder height.",
+        "Begin making small circular motions with your hands.",
+        "Gradually increase the size of the circles until you are making large windmills.",
+        "Perform for 20 reps forward.",
+        "Reverse direction and perform for 20 reps backward.",
+        "Keep your shoulders relaxed away from your ears."
+    ]
   },
   { 
-    id: 'wu_2', name: 'Band Pull-Aparts', type: 'weighted', sets: 2, reps: '15', restSeconds: 30, 
-    cues: 'Squeeze shoulder blades together. Do not shrug.', 
-    setup: 'Hold a light band with hands shoulder-width apart.', 
-    visualize: 'Trying to touch your shoulder blades together.', 
-    action: 'Pull the band apart until it touches your chest. Control the return.',
-    muscleFocus: 'Rear Delts', targetGroup: 'Warmup', feeling: 'Burn in upper back', isWarmup: true, pacer: PACER_ISO_HOLD, metValue: 3.0, muscleSplit: { 'Rear Delts': 70, 'Mid Back': 30 }, motionType: 'fly', isCompound: false 
+    id: 'wu_2', name: "Bent-Over 'Air' T-Raises", type: 'weighted', sets: 2, reps: '15', restSeconds: 30, 
+    cues: "Thumbs out. Squeeze back. Don't swing.", 
+    setup: 'Stand with feet hip-width. Hinge at hips (45°). Arms hang down, thumbs pointing OUT.', 
+    visualize: 'There is a walnut between your shoulder blades. Crack it.', 
+    action: "Raise arms to form a 'T'. Squeeze upper back hard at top. Lower slowly.",
+    muscleFocus: 'Rear Delts', targetGroup: 'Warmup', feeling: 'Tightness between shoulder blades', isWarmup: true, 
+    pacer: { startDelay: 2, phases: [{ action: 'LIFT', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 2, voiceCue: 'Crack Walnut', breathing: 'Hold' }, { action: 'LOWER', duration: 1, voiceCue: 'Down', breathing: 'Inhale' }] }, 
+    metValue: 3.0, muscleSplit: { 'Rear Delts': 50, 'Rhomboids': 50 }, motionType: 'fly', isCompound: false,
+    detailedSteps: [
+        "Stand with feet hip-width apart.",
+        "Hinge at your hips until your torso is at a 45-degree angle. Keep back flat.",
+        "Let your arms hang straight down.",
+        "Turn your thumbs to point OUT (away from your body).",
+        "Raise your arms straight out to the sides to form a 'T' shape.",
+        "Initiate the movement by squeezing your shoulder blades together.",
+        "Squeeze hard at the top for 2 seconds.",
+        "Lower slowly to the start position. Do not swing your body."
+    ]
   },
   { 
-    id: 'wu_3', name: 'Cat-Cow Stretch', type: 'weighted', sets: 1, reps: '10', restSeconds: 0, 
-    cues: 'Move spine through full range of motion.', 
-    setup: 'On hands and knees (tabletop position).', 
-    visualize: 'A wave moving through your spine.', 
-    action: 'Arch back up (Cat), then drop belly down (Cow).',
-    muscleFocus: 'Spine', targetGroup: 'Warmup', feeling: 'Loosening of the back', isWarmup: true, pacer: PACER_FAST, metValue: 2.5, muscleSplit: { 'Spine': 100 }, motionType: 'hold', isCompound: false 
+    id: 'wu_3', name: 'Bench Thoracic Extension', type: 'weighted', sets: 1, reps: '10', restSeconds: 0, 
+    cues: 'Elbows on bench. Hips back. Drop chest low.', 
+    setup: 'Kneel in front of bench. Elbows on bench, hands together (prayer).', 
+    visualize: 'Melting your chest through your arms towards the floor.', 
+    action: 'Rock hips back to heels. Drop head between biceps. Feel deep stretch. Rock forward.',
+    muscleFocus: 'Upper Back Mobility', targetGroup: 'Warmup', feeling: 'Deep stretch in armpits/spine', isWarmup: true, 
+    pacer: { startDelay: 2, phases: [{ action: 'ROCK BACK', duration: 2, voiceCue: 'Hips Back', breathing: 'Exhale' }, { action: 'STRETCH', duration: 2, voiceCue: 'Deep Stretch', breathing: 'Hold' }, { action: 'FORWARD', duration: 1, voiceCue: 'Release', breathing: 'Inhale' }] }, 
+    metValue: 2.5, muscleSplit: { 'Spine': 80, 'Lats': 20 }, motionType: 'hold', isCompound: false,
+    detailedSteps: [
+        "Kneel on the floor in front of a flat bench.",
+        "Place both elbows on the bench pad, shoulder-width apart.",
+        "Bring your hands together in a prayer position.",
+        "Rock your hips back towards your heels.",
+        "Allow your head to drop down between your biceps.",
+        "Try to 'melt' your chest towards the floor. You should feel a stretch in your lats and upper back.",
+        "Hold the deep stretch for 2 seconds.",
+        "Rock forward to release tension slightly, then repeat."
+    ] 
   },
   { 
     id: 'wu_4', name: 'Bodyweight RDLs', type: 'weighted', sets: 1, reps: '15', restSeconds: 0, 
@@ -123,7 +156,16 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Stand on one leg or both. Soft knees.', 
     visualize: 'Closing a car door with your butt.', 
     action: 'Push hips back. Feel hamstring stretch. Stand up.',
-    muscleFocus: 'Hamstrings', targetGroup: 'Warmup', feeling: 'Stretch in back of legs', isWarmup: true, pacer: PACER_FAST, metValue: 3.0, muscleSplit: { 'Hamstrings': 80, 'Glutes': 20 }, motionType: 'hinge', isCompound: false 
+    muscleFocus: 'Hamstrings', targetGroup: 'Warmup', feeling: 'Stretch in back of legs', isWarmup: true, pacer: PACER_FAST, metValue: 3.0, muscleSplit: { 'Hamstrings': 80, 'Glutes': 20 }, motionType: 'hinge', isCompound: false,
+    detailedSteps: [
+        "Stand tall with feet hip-width apart.",
+        "Soften your knees slightly (do not lock them).",
+        "Place your hands on your hips or behind your head.",
+        "Push your hips backward as if closing a car door with your glutes.",
+        "Keep your back perfectly flat. Go as low as your hamstrings allow.",
+        "Feel the stretch in the back of your legs.",
+        "Squeeze your glutes to return to the starting position."
+    ]
   },
   { 
     id: 'wu_5', name: 'Wrist Rotations', type: 'weighted', sets: 1, reps: '30 sec', restSeconds: 0, 
@@ -131,7 +173,14 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Clasp hands together.', 
     visualize: 'Lubricating the joints.', 
     action: 'Roll wrists in circles for 30 seconds.',
-    muscleFocus: 'Wrists', targetGroup: 'Warmup', feeling: 'Lubricated joints', isWarmup: true, pacer: PACER_FAST, metValue: 2.0, muscleSplit: { 'Forearms': 100 }, motionType: 'curl', isCompound: false 
+    muscleFocus: 'Wrists', targetGroup: 'Warmup', feeling: 'Lubricated joints', isWarmup: true, pacer: PACER_FAST, metValue: 2.0, muscleSplit: { 'Forearms': 100 }, motionType: 'curl', isCompound: false,
+    detailedSteps: [
+        "Interlock your fingers with your palms touching.",
+        "Keep your elbows relaxed at your sides.",
+        "Rotate your wrists in a circular motion.",
+        "Move smoothly, trying to find the full range of motion.",
+        "Rotate clockwise for 15 seconds, then counter-clockwise for 15 seconds."
+    ]
   },
   { 
     id: 'wu_pushups', name: 'Push Ups (Warmup)', type: 'weighted', sets: 2, reps: '15', restSeconds: 45, 
@@ -139,7 +188,15 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Plank position. Hands shoulder width.', 
     visualize: 'Pushing the earth away.', 
     action: 'Lower chest to floor. Press up explosively.',
-    muscleFocus: 'Chest/Tris', targetGroup: 'Warmup', feeling: 'Upper body pump', isWarmup: true, pacer: PACER_FAST, metValue: 3.8, muscleSplit: { 'Chest': 60, 'Triceps': 20, 'Shoulders': 20 }, motionType: 'press', isCompound: true 
+    muscleFocus: 'Chest/Tris', targetGroup: 'Warmup', feeling: 'Upper body pump', isWarmup: true, pacer: PACER_FAST, metValue: 3.8, muscleSplit: { 'Chest': 60, 'Triceps': 20, 'Shoulders': 20 }, motionType: 'press', isCompound: true,
+    detailedSteps: [
+        "Get into a high plank position. Hands slightly wider than shoulders.",
+        "Engage your core and squeeze your glutes. Your body should be a straight line.",
+        "Lower your body until your chest nearly touches the floor.",
+        "Keep your elbows at a 45-degree angle (not flared out 90 degrees).",
+        "Push back up explosively to the starting position.",
+        "Keep your neck neutral, looking slightly ahead of your hands."
+    ]
   },
   { 
     id: 'wu_pullups', name: 'Pull Ups (Assisted/BW)', type: 'weighted', sets: 2, reps: '8-10', restSeconds: 45, 
@@ -147,7 +204,16 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Grip bar slightly wider than shoulders.', 
     visualize: 'Driving elbows into back pockets.', 
     action: 'Pull chin over bar. Lower fully.',
-    muscleFocus: 'Lats', targetGroup: 'Warmup', feeling: 'Back activation', isWarmup: true, pacer: PACER_PULL, metValue: 5.0, muscleSplit: { 'Lats': 80, 'Biceps': 20 }, motionType: 'pull', isCompound: true 
+    muscleFocus: 'Lats', targetGroup: 'Warmup', feeling: 'Back activation', isWarmup: true, pacer: PACER_PULL, metValue: 5.0, muscleSplit: { 'Lats': 80, 'Biceps': 20 }, motionType: 'pull', isCompound: true,
+    detailedSteps: [
+        "Grab the bar with an overhand grip, slightly wider than shoulder-width.",
+        "Hang freely with arms fully extended (dead hang).",
+        "Engage your shoulders by pulling them down (depress scapula).",
+        "Pull your chest towards the bar by driving your elbows down.",
+        "Clear the bar with your chin.",
+        "Lower yourself slowly back to a full hang.",
+        "Avoid swinging or kicking your legs."
+    ]
   },
   { 
     id: 'wu_punching', name: 'Shadow Boxing', type: 'cardio', sets: 1, reps: '2 mins', restSeconds: 30, 
@@ -155,7 +221,16 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Staggered stance. Hands up.', 
     visualize: 'Fighting an opponent.', 
     action: 'Throw 1-2 combos (Jab, Cross). Move head.',
-    muscleFocus: 'Full Body', targetGroup: 'Warmup', feeling: 'Elevated heart rate', isWarmup: true, pacer: PACER_FAST, metValue: 8.0, muscleSplit: { 'Shoulders': 40, 'Core': 30, 'Legs': 30 }, motionType: 'cardio', isCompound: true 
+    muscleFocus: 'Full Body', targetGroup: 'Warmup', feeling: 'Elevated heart rate', isWarmup: true, pacer: PACER_FAST, metValue: 8.0, muscleSplit: { 'Shoulders': 40, 'Core': 30, 'Legs': 30 }, motionType: 'cardio', isCompound: true,
+    detailedSteps: [
+        "Stand with one foot forward, knees slightly bent.",
+        "Keep your hands up protecting your face.",
+        "Bounce lightly on the balls of your feet.",
+        "Throw straight punches (Jabs and Crosses).",
+        "Focus on snapping your punches fully out and back.",
+        "Rotate your hips with each punch for power.",
+        "Keep moving constantly for the full duration to get your heart rate up."
+    ]
   },
 ];
 
@@ -203,6 +278,28 @@ export const PUSH_A_DAY: WorkoutDay = {
           "At the bottom, feel the stretch in your lower chest.",
           "Press back up by driving your hands into the bars, keeping the forward lean.",
           "Squeeze your chest at the top. Do not lock out your elbows completely."
+      ],
+      alternatives: [
+          {
+              id: 'pa_2_alt_1', name: 'High-to-Low Cable Crossover', type: 'weighted', sets: 3, reps: '12-15', restSeconds: 120,
+              cues: 'Stand tall. Pull to pockets. Squeeze bottom.',
+              setup: 'Set pulleys to Highest Position. Stagger stance (one foot forward).',
+              visualize: 'Tucking the handles into your front pockets.',
+              action: 'Keep elbows locked with slight bend. Pull handles down and together until they touch at your waist. Squeeze hard. Return slowly to shoulder height.',
+              muscleFocus: 'Lower Chest', targetGroup: 'Chest', feeling: 'Squeeze in lower outer pecs.',
+              pacer: { startDelay: 3, phases: [{ action: 'PULL DOWN', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'STRETCH', duration: 3, voiceCue: 'Up Slow', breathing: 'Inhale' }] },
+              metValue: 5.0, muscleSplit: { 'Lower Chest': 80, 'Triceps': 10, 'Front Delts': 10 }, motionType: 'fly', isCompound: false,
+              swapLabel: 'SAFER (Hand Injury / Joint Friendly)',
+              detailedSteps: [
+                  "Set both pulleys to the highest position. Attach D-handles.",
+                  "Grab the handles and step forward into a staggered stance for stability.",
+                  "Keep a slight bend in your elbows and lock them there. Do not turn this into a press.",
+                  "Pull the handles down and across your body towards your front pockets.",
+                  "Bring your hands together or cross them slightly at your waist.",
+                  "Squeeze your lower chest hard for 1 second at the bottom.",
+                  "Slowly let the weights pull your arms back up to shoulder height (3 seconds). Feel the stretch."
+              ]
+          }
       ]
     },
     { 
@@ -296,7 +393,16 @@ export const PUSH_A_DAY: WorkoutDay = {
               muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.',
               pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] },
               metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false,
-              swapLabel: 'BETTER (Constant Tension)'
+              swapLabel: 'BETTER (Constant Tension)',
+              detailedSteps: [
+                  "Adjust the seat so the handles are at chest height.",
+                  "Sit back and keep your back flat against the pad.",
+                  "Place your forearms on the pads or grab the handles.",
+                  "Squeeze your elbows/hands together in front of your chest.",
+                  "Hold the contraction for 1 second.",
+                  "Slowly return to the start position, feeling a stretch.",
+                  "Do not let the weight stack touch down between reps."
+              ]
           }
       ]
     },
@@ -357,7 +463,16 @@ export const PULL_A_DAY: WorkoutDay = {
               muscleFocus: 'Mid-Back', targetGroup: 'Back', feeling: 'Pinching a pencil between blades.',
               pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] },
               metValue: 6.0, muscleSplit: { 'Mid Back': 70, 'Lats': 20, 'Biceps': 10 }, motionType: 'pull', isCompound: true,
-              swapLabel: 'ALTERNATIVE (Equal)'
+              swapLabel: 'ALTERNATIVE (Equal)',
+              detailedSteps: [
+                  "Sit on the machine with your feet on the platform, knees slightly bent.",
+                  "Grab the triangle handle. Keep your back straight and chest up.",
+                  "Pull the handle towards your lower stomach/waist.",
+                  "Drive your elbows back past your body.",
+                  "Squeeze your shoulder blades together hard at the peak.",
+                  "Extend your arms forward slowly, letting your lats stretch.",
+                  "Do not round your back or lean excessively forward/backward."
+              ]
           }
       ]
     },
@@ -429,7 +544,15 @@ export const PULL_A_DAY: WorkoutDay = {
               muscleFocus: 'Bicep Short Head', targetGroup: 'Biceps', feeling: 'Isolated bicep pump.',
               pacer: { startDelay: 3, phases: [{ action: 'CURL', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'LOWER', duration: 3, voiceCue: 'Control', breathing: 'Inhale' }] },
               metValue: 4.0, muscleSplit: { 'Bicep Short Head': 80, 'Brachialis': 20 }, motionType: 'curl', isCompound: false,
-              swapLabel: 'BETTER (Locked Axis)'
+              swapLabel: 'BETTER (Locked Axis)',
+              detailedSteps: [
+                  "Adjust the seat height so your armpits are snug over the pad.",
+                  "Grip the handles with an underhand grip.",
+                  "Keep your triceps pressed firmly against the pad.",
+                  "Curl the handles towards your shoulders.",
+                  "Squeeze at the top.",
+                  "Lower slowly, but keep a slight bend at the bottom to maintain tension."
+              ]
           }
       ]
     },
@@ -489,7 +612,16 @@ export const LEGS_POWER_DAY: WorkoutDay = {
       visualize: 'Trying to touch your heels to the floor.',
       action: 'Drop heels deep. PAUSE. Drive up onto big toe.',
       muscleFocus: 'Soleus', targetGroup: 'Legs', feeling: 'Fire in lower calves.',
-      pacer: PACER_CALVES, metValue: 3.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false
+      pacer: PACER_CALVES, metValue: 3.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false,
+      detailedSteps: [
+          "Sit on the machine and adjust the pads to rest firmly on your lower thighs.",
+          "Place the balls of your feet on the edge of the platform.",
+          "Lift the weight to release the safety catch.",
+          "Lower your heels as far as possible to get a full stretch.",
+          "Pause for 2 seconds at the bottom (crucial to eliminate momentum).",
+          "Drive up onto your toes as high as possible.",
+          "Squeeze your calves at the top."
+      ]
     },
     {
       id: 'lp_4', name: 'Hanging Leg Raises', type: 'weighted', sets: 3, reps: '10-15', restSeconds: 90,
@@ -499,7 +631,16 @@ export const LEGS_POWER_DAY: WorkoutDay = {
       action: 'Curl knees/legs up. Round your lower back slightly at top. Lower slowly without swinging.',
       muscleFocus: 'Lower Abs', targetGroup: 'Abs', feeling: 'Deep abdominal crunch.',
       pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 2, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }] }, 
-      metValue: 4.0, muscleSplit: { 'Abs': 80, 'Hip Flexors': 20 }, motionType: 'hold', isCompound: false
+      metValue: 4.0, muscleSplit: { 'Abs': 80, 'Hip Flexors': 20 }, motionType: 'hold', isCompound: false,
+      detailedSteps: [
+          "Hang from a pull-up bar with an overhand grip.",
+          "Engage your shoulders to keep them away from your ears.",
+          "Without swinging, lift your legs (straight or bent knees).",
+          "Focus on curling your pelvis up towards your chest, not just lifting your legs.",
+          "Pause at the top.",
+          "Lower your legs slowly and under control. Do not drop them.",
+          "Stop before you start swinging."
+      ]
     },
     {
       id: 'lp_5', name: 'Cable Woodchoppers', type: 'weighted', sets: 3, reps: '12-15', restSeconds: 60,
@@ -508,7 +649,16 @@ export const LEGS_POWER_DAY: WorkoutDay = {
       visualize: 'Slashing a sword across your body.',
       action: 'Pull handle diagonally down to opposite knee. Twist torso. Return slowly.',
       muscleFocus: 'Obliques', targetGroup: 'Abs', feeling: 'Side core burn.',
-      pacer: PACER_CHOP, metValue: 4.0, muscleSplit: { 'Obliques': 80, 'Abs': 20 }, motionType: 'pull', isCompound: false
+      pacer: PACER_CHOP, metValue: 4.0, muscleSplit: { 'Obliques': 80, 'Abs': 20 }, motionType: 'pull', isCompound: false,
+      detailedSteps: [
+          "Set the cable pulley to the highest position.",
+          "Stand sideways to the machine, feet shoulder-width apart.",
+          "Grab the handle with both hands.",
+          "Pull the cable diagonally across your body down towards your opposite knee.",
+          "Rotate your torso as you pull.",
+          "Keep your arms relatively straight (slight bend is okay).",
+          "Return slowly to the start position, resisting the pull."
+      ]
     }
   ]
 };
@@ -527,7 +677,16 @@ export const PUSH_B_DAY: WorkoutDay = {
       action: 'Lower slowly. Tuck elbows slightly (arrow shape). Power up explosively.',
       muscleFocus: 'Mid Chest', targetGroup: 'Chest', feeling: 'Heavy load on chest.', 
       pacer: PACER_PUSH, metValue: 6.0, muscleSplit: { 'Mid Chest': 80, 'Triceps': 15, 'Front Delts': 5 }, motionType: 'press', isCompound: true,
-      facts: ["Dumbbells require more stabilization than barbells, activating more synergistic muscle fibers.", "Tucking the elbows slightly (arrow shape) protects the shoulder joint while maintaining chest activation."]
+      facts: ["Dumbbells require more stabilization than barbells, activating more synergistic muscle fibers.", "Tucking the elbows slightly (arrow shape) protects the shoulder joint while maintaining chest activation."],
+      detailedSteps: [
+          "Sit on the edge of a flat bench with dumbbells on your knees.",
+          "Kick the weights up as you lie back flat.",
+          "Position dumbbells at the sides of your chest.",
+          "Keep your wrists straight and elbows tucked at a 45-degree angle.",
+          "Press the weights up explosively until your arms are extended.",
+          "Lower the weights slowly and under control.",
+          "Feel the stretch at the bottom before pressing up again."
+      ]
     },
     { 
       id: 'pb_2', name: 'Seated/Standing Overhead Press', type: 'weighted', sets: 3, reps: '8-10', restSeconds: 180, 
@@ -536,7 +695,16 @@ export const PUSH_B_DAY: WorkoutDay = {
       visualize: 'Pushing your head through a window.',
       action: 'Press straight up. As bar clears head, push head forward slightly. Lock out at top.',
       muscleFocus: 'Front Delts', targetGroup: 'Shoulders', feeling: 'Shoulder fatigue.', 
-      pacer: PACER_PUSH, metValue: 6.0, muscleSplit: { 'Front Delts': 70, 'Side Delts': 15, 'Triceps': 15 }, motionType: 'press', isCompound: true 
+      pacer: PACER_PUSH, metValue: 6.0, muscleSplit: { 'Front Delts': 70, 'Side Delts': 15, 'Triceps': 15 }, motionType: 'press', isCompound: true,
+      detailedSteps: [
+          "Stand or sit with back support.",
+          "Hold the weight at shoulder level with elbows pointing down.",
+          "Brace your core tight. Do not arch your lower back excessively.",
+          "Press the weight straight up overhead.",
+          "As the bar clears your forehead, push your head slightly forward ('through the window').",
+          "Lock out your elbows at the top.",
+          "Lower the weight slowly back to shoulder level."
+      ] 
     },
     { 
       id: 'pb_3', name: 'Dumbbell Lateral Raise', type: 'weighted', sets: 4, reps: '15', restSeconds: 90, 
@@ -545,7 +713,16 @@ export const PUSH_B_DAY: WorkoutDay = {
       visualize: 'Pouring water out of a jug.',
       action: 'Lead with elbows. Raise arms to side until parallel to floor. Do not use momentum.',
       muscleFocus: 'Side Delts', targetGroup: 'Shoulders', feeling: 'Burn on sides.', 
-      pacer: PACER_ISO_HOLD, metValue: 4.0, muscleSplit: { 'Side Delts': 100 }, motionType: 'raise', isCompound: false 
+      pacer: PACER_ISO_HOLD, metValue: 4.0, muscleSplit: { 'Side Delts': 100 }, motionType: 'raise', isCompound: false,
+      detailedSteps: [
+          "Stand with feet shoulder-width apart, holding dumbbells at your sides.",
+          "Lean forward slightly at the hips.",
+          "Raise your arms out to the sides, leading with your elbows.",
+          "Keep a slight bend in your elbows.",
+          "Raise until your arms are parallel to the floor.",
+          "Imagine pouring water out of a pitcher at the top (internal rotation).",
+          "Lower slowly. Do not swing the weights up."
+      ] 
     },
     { 
       id: 'pb_4', name: 'Skull Crushers', type: 'weighted', sets: 4, reps: '10-12', restSeconds: 120, 
@@ -554,7 +731,15 @@ export const PUSH_B_DAY: WorkoutDay = {
       visualize: 'Hinging only at the elbow.',
       action: 'Lower bar to your hairline (not nose). Drive bar back up to ceiling.',
       muscleFocus: 'Triceps (Power)', targetGroup: 'Triceps', feeling: 'Tricep belly stretch.', 
-      pacer: PACER_PUSH, metValue: 5.0, muscleSplit: { 'Triceps': 100 }, motionType: 'press', isCompound: false 
+      pacer: PACER_PUSH, metValue: 5.0, muscleSplit: { 'Triceps': 100 }, motionType: 'press', isCompound: false,
+      detailedSteps: [
+          "Lie flat on a bench holding an EZ bar or dumbbells straight up.",
+          "Keep your elbows pointing at the ceiling and tuck them in slightly.",
+          "Hinge ONLY at the elbows to lower the weight.",
+          "Lower the bar towards your hairline or slightly behind your head for a better stretch.",
+          "Drive the weight back up to the starting position using your triceps.",
+          "Do not let your elbows flare out or move back and forth."
+      ] 
     },
     { 
       id: 'pb_5', name: 'Pec Deck Fly', type: 'weighted', sets: 3, reps: '15', restSeconds: 90, 
@@ -564,7 +749,16 @@ export const PUSH_B_DAY: WorkoutDay = {
       action: 'Open arms wide (3s). Don\'t let weight stack touch. Squeeze at center (1s).',
       muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.', 
       pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
-      metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false 
+      metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false,
+      detailedSteps: [
+          "Adjust seat height so handles are level with your mid-chest.",
+          "Sit back firmly against the pad.",
+          "Grab the handles. Your elbows should be slightly bent.",
+          "Bring the handles together in front of you in a smooth arc.",
+          "Squeeze your chest muscles hard in the center.",
+          "Slowly return to the open position until you feel a stretch.",
+          "Keep the movement controlled; do not let the weights slam."
+      ] 
     },
   ]
 };
@@ -583,7 +777,16 @@ export const PULL_B_DAY: WorkoutDay = {
       action: 'Pull handle to upper chest. Arch back slightly. Squeeze hard.',
       muscleFocus: 'Lower Lats', targetGroup: 'Back', feeling: 'Lower back/lats engaging.', 
       pacer: PACER_PULL, metValue: 6.0, muscleSplit: { 'Lats (Lower)': 90, 'Biceps': 10 }, motionType: 'pull', isCompound: true,
-      facts: ["A neutral grip puts the shoulder in a mechanically strong position, often allowing you to pull heavier weights.", "Pulling lower (to the sternum) emphasizes the lower lats."]
+      facts: ["A neutral grip puts the shoulder in a mechanically strong position, often allowing you to pull heavier weights.", "Pulling lower (to the sternum) emphasizes the lower lats."],
+      detailedSteps: [
+          "Attach a V-handle or parallel grip handle.",
+          "Sit down and secure your knees under the pads.",
+          "Lean back slightly and stick your chest out.",
+          "Pull the handle down towards your upper chest.",
+          "Keep your elbows close to your body.",
+          "Squeeze your back muscles at the bottom.",
+          "Return slowly to the top, letting your lats stretch fully."
+      ]
     },
     { 
       id: 'plb_2', name: 'Wide Grip Barbell Row', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120, 
@@ -594,6 +797,15 @@ export const PULL_B_DAY: WorkoutDay = {
       muscleFocus: 'Upper Back', targetGroup: 'Back', feeling: 'Upper back thickness.', 
       pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] }, 
       metValue: 6.0, muscleSplit: { 'Upper Back': 80, 'Rear Delts': 20 }, motionType: 'pull', isCompound: true,
+      detailedSteps: [
+          "Stand with feet shoulder-width apart, holding a barbell with a wide overhand grip.",
+          "Hinge at your hips until your torso is nearly parallel to the floor.",
+          "Keep your back flat and knees slightly bent.",
+          "Pull the bar up towards your lower chest/sternum.",
+          "Drive your elbows up and out.",
+          "Squeeze your upper back.",
+          "Lower the bar slowly to a full stretch."
+      ],
       alternatives: [
           {
               id: 'plb_2_alt_1', name: 'Seated Cable Row (Wide)', type: 'weighted', sets: 3, reps: '10-12', restSeconds: 120,
@@ -604,7 +816,16 @@ export const PULL_B_DAY: WorkoutDay = {
               muscleFocus: 'Upper Back', targetGroup: 'Back', feeling: 'Upper back thickness.',
               pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] },
               metValue: 6.0, muscleSplit: { 'Upper Back': 80, 'Rear Delts': 20 }, motionType: 'pull', isCompound: true,
-              swapLabel: 'ALTERNATIVE (Safer for Lower Back)'
+              swapLabel: 'ALTERNATIVE (Safer for Lower Back)',
+              detailedSteps: [
+                  "Attach a wide lat bar to the seated row machine.",
+                  "Sit with knees bent and back straight.",
+                  "Grip the bar wide.",
+                  "Pull the bar towards your upper abs or lower chest.",
+                  "Allow your elbows to flare out to the sides (not tucked).",
+                  "Squeeze your upper back and rear delts.",
+                  "Return slowly."
+              ]
           }
       ]
     },
@@ -616,6 +837,14 @@ export const PULL_B_DAY: WorkoutDay = {
       action: 'Raise DBs out to side. Squeeze rear delts. Control down.',
       muscleFocus: 'Rear Delts', targetGroup: 'Shoulders', feeling: 'Rear shoulder burn.', 
       pacer: PACER_ISO_HOLD, metValue: 4.5, muscleSplit: { 'Rear Delts': 100 }, motionType: 'fly', isCompound: false,
+      detailedSteps: [
+          "Hold dumbbells and hinge at your hips (flat back).",
+          "Let your arms hang down with palms facing each other.",
+          "Keep a slight bend in your elbows.",
+          "Raise your arms out to the sides until parallel to the floor.",
+          "Squeeze the back of your shoulders (rear delts).",
+          "Lower slowly. Do not swing the weights."
+      ],
       alternatives: [
           {
               id: 'plb_3_alt_1', name: 'Reverse Pec Deck', type: 'weighted', sets: 4, reps: '15', restSeconds: 90,
@@ -626,7 +855,16 @@ export const PULL_B_DAY: WorkoutDay = {
               muscleFocus: 'Rear Delts', targetGroup: 'Shoulders', feeling: 'Rear shoulder isolation.',
               pacer: { startDelay: 3, phases: [{ action: 'BACK', duration: 2, voiceCue: 'Push Back', breathing: 'Exhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Hold', breathing: 'Hold' }, { action: 'RETURN', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] },
               metValue: 4.5, muscleSplit: { 'Rear Delts': 100 }, motionType: 'fly', isCompound: false,
-              swapLabel: 'BETTER (Isolates Rear Delt)'
+              swapLabel: 'BETTER (Isolates Rear Delt)',
+              detailedSteps: [
+                  "Sit facing the machine pad.",
+                  "Adjust handles so they are at shoulder height.",
+                  "Grab the handles with palms facing in or down.",
+                  "Keep your arms straight with a tiny bend in elbows.",
+                  "Pull your arms back in a wide arc.",
+                  "Squeeze the rear delts hard.",
+                  "Return slowly."
+              ]
           }
       ]
     },
@@ -637,7 +875,14 @@ export const PULL_B_DAY: WorkoutDay = {
       visualize: 'Holding a hammer.',
       action: 'Curl dumbbell across the body towards opposite pectoral. Squeeze handle tight.',
       muscleFocus: 'Brachialis', targetGroup: 'Biceps', feeling: 'Forearm/Side Arm.', 
-      pacer: PACER_PULL, metValue: 4.0, muscleSplit: { 'Brachialis': 60, 'Forearms': 40 }, motionType: 'curl', isCompound: false 
+      pacer: PACER_PULL, metValue: 4.0, muscleSplit: { 'Brachialis': 60, 'Forearms': 40 }, motionType: 'curl', isCompound: false,
+      detailedSteps: [
+          "Stand holding dumbbells at your sides, palms facing your body.",
+          "Keep your elbows tucked at your sides.",
+          "Curl the weights up towards your shoulders while keeping palms facing each other (Neutral Grip).",
+          "Squeeze your biceps and forearms at the top.",
+          "Lower slowly to full extension."
+      ] 
     },
     { 
       id: 'plb_5', name: 'Cable Bicep Curls', type: 'weighted', sets: 3, reps: '12', restSeconds: 90, 
@@ -646,7 +891,16 @@ export const PULL_B_DAY: WorkoutDay = {
       visualize: 'Constant tension.',
       action: 'Step back. Curl to chin. Lower slowly. Don\'t let the weight stack touch.',
       muscleFocus: 'Bicep Short Head', targetGroup: 'Biceps', feeling: 'Inner bicep pump.', 
-      pacer: PACER_PULL, metValue: 4.0, muscleSplit: { 'Bicep Short Head': 100 }, motionType: 'curl', isCompound: false 
+      pacer: PACER_PULL, metValue: 4.0, muscleSplit: { 'Bicep Short Head': 100 }, motionType: 'curl', isCompound: false,
+      detailedSteps: [
+          "Attach a straight bar to a low pulley.",
+          "Stand up and hold the bar with an underhand grip.",
+          "Keep your elbows slightly forward of your hips.",
+          "Curl the bar up towards your chest.",
+          "Squeeze the biceps hard at the top.",
+          "Lower slowly under control.",
+          "Keep constant tension on the cable."
+      ] 
     },
   ]
 };
@@ -664,7 +918,16 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       visualize: 'Your hands are hooks. Your hips are the engine.',
       action: 'Send hips back. Bar drags down thighs. Stop at mid-shin. Drive hips forward to lock out.',
       muscleFocus: 'Hamstrings', targetGroup: 'Legs', feeling: 'Stretch in hams.',
-      pacer: PACER_CONTROLLED_HINGE, metValue: 7.0, muscleSplit: { 'Hamstrings': 60, 'Glutes': 30, 'Lower Back': 10 }, motionType: 'hinge', isCompound: true
+      pacer: PACER_CONTROLLED_HINGE, metValue: 7.0, muscleSplit: { 'Hamstrings': 60, 'Glutes': 30, 'Lower Back': 10 }, motionType: 'hinge', isCompound: true,
+      detailedSteps: [
+          "Hold a barbell with an overhand grip, feet hip-width apart.",
+          "Unlock your knees (slight bend) and keep them fixed.",
+          "Push your hips back to lower the bar.",
+          "Keep the bar in contact with your legs the entire time.",
+          "Lower until you feel a deep stretch in your hamstrings (usually mid-shin).",
+          "Drive hips forward to stand back up.",
+          "Squeeze glutes at the top."
+      ]
     },
     {
       id: 'lh_2', name: 'Hyperextensions', type: 'weighted', sets: 3, reps: '15', restSeconds: 90,
@@ -674,7 +937,15 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       action: 'Hug plate to chest. Lower until stretch felt. Pull up until body is straight line.',
       muscleFocus: 'Posterior Chain', targetGroup: 'Back', feeling: 'Glute/Ham/Lower Back pump.',
       pacer: { startDelay: 2, phases: [{ action: 'LOWER', duration: 2, voiceCue: 'Down', breathing: 'Inhale' }, { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' }, { action: 'UP', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }] },
-      metValue: 4.5, muscleSplit: { 'Hamstrings': 40, 'Glutes': 40, 'Lower Back': 20 }, motionType: 'hinge', isCompound: false
+      metValue: 4.5, muscleSplit: { 'Hamstrings': 40, 'Glutes': 40, 'Lower Back': 20 }, motionType: 'hinge', isCompound: false,
+      detailedSteps: [
+          "Adjust the pad so it sits just below your hip bone.",
+          "Cross your arms over your chest (hold a weight plate for intensity).",
+          "Lower your torso towards the floor, keeping your back flat.",
+          "Feel the stretch in your hamstrings.",
+          "Raise your torso back up using your glutes and hamstrings.",
+          "Stop when your body forms a straight line. Do not hyperextend your back."
+      ]
     },
     {
       id: 'lh_3', name: 'Seated Calf Raise', type: 'weighted', sets: 4, reps: '15-20', restSeconds: 60,
@@ -683,7 +954,15 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       visualize: 'Dead stop at the bottom.',
       action: 'Lower fully. Wait for count of two. Explode up.',
       muscleFocus: 'Soleus', targetGroup: 'Legs', feeling: 'Deep burn.',
-      pacer: PACER_CALVES, metValue: 3.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false
+      pacer: PACER_CALVES, metValue: 3.0, muscleSplit: { 'Soleus': 100 }, motionType: 'raise', isCompound: false,
+      detailedSteps: [
+          "Sit on the machine with knee pads on your thighs.",
+          "Balls of feet on the platform edge.",
+          "Lower heels deep for a full stretch.",
+          "Pause for 2 seconds at the bottom.",
+          "Push up onto your toes quickly.",
+          "Squeeze hard at the top."
+      ]
     },
     {
       id: 'lh_4', name: 'Hanging Leg Raises', type: 'weighted', sets: 3, reps: 'Failure', restSeconds: 90,
@@ -693,7 +972,14 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       action: 'Lift legs. Focus on the pelvic curl at the top. Lower with control.',
       muscleFocus: 'Abs', targetGroup: 'Abs', feeling: 'Abdominal cramping.',
       pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }] },
-      metValue: 4.0, muscleSplit: { 'Abs': 100 }, motionType: 'hold', isCompound: false
+      metValue: 4.0, muscleSplit: { 'Abs': 100 }, motionType: 'hold', isCompound: false,
+      detailedSteps: [
+          "Hang from a pull-up bar.",
+          "Lift your legs towards your chest.",
+          "Focus on curling your pelvis up.",
+          "Lower slowly.",
+          "Do not swing."
+      ]
     },
     {
       id: 'lh_5', name: 'Plank', type: 'weighted', sets: 3, reps: 'Failure', restSeconds: 60,
@@ -703,7 +989,15 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       action: 'Squeeze glutes. Squeeze abs. Pull elbows down isometrically to increase tension.',
       muscleFocus: 'Core', targetGroup: 'Abs', feeling: 'Whole body shaking.',
       pacer: PACER_BREATHING, isTimed: true,
-      metValue: 3.5, muscleSplit: { 'Abs': 60, 'Glutes': 20, 'Shoulders': 20 }, motionType: 'hold', isCompound: false
+      metValue: 3.5, muscleSplit: { 'Abs': 60, 'Glutes': 20, 'Shoulders': 20 }, motionType: 'hold', isCompound: false,
+      detailedSteps: [
+          "Get into a forearm plank position.",
+          "Elbows directly under shoulders.",
+          "Body in a straight line from head to heels.",
+          "Squeeze your glutes and quads tight.",
+          "Pull your elbows towards your toes to create tension in your core.",
+          "Hold and breathe rhythmically."
+      ]
     }
   ]
 };

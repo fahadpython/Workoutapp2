@@ -51,6 +51,7 @@ export interface Exercise {
   swapLabel?: string; // Reason for swap (e.g. "Better Isolation")
   benchAngle?: number; // Optional: Required bench angle in degrees
   pendingReason?: string; // New: If moved from another day
+  gifUrl?: string; // New: Link to ExerciseDB Animation
 }
 
 export interface WorkoutDay {

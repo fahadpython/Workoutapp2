@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Droplets, X, CheckCircle } from 'lucide-react';
+import { Droplets, X } from 'lucide-react';
 
 interface Props {
   amount: number; // in ml
@@ -11,8 +11,20 @@ interface Props {
 
 const WaterReminder: React.FC<Props> = ({ amount, reason, onLog, onSkip }) => {
   const getLabel = () => {
-      if (amount <= 50) return { title: "Take a Sip", icon: "💧" };
-      if (amount <= 150) return { title: "Take a Gulp", icon: "💧💧" };
+      // Hydration Estimation:
+      // Avg Sip = 25-30ml
+      // Avg Gulp = 80-100ml
+      
+      if (amount < 100) {
+          const sips = Math.max(1, Math.round(amount / 25));
+          return { title: `Take ${sips} Sip${sips > 1 ? 's' : ''}`, icon: "💧" };
+      }
+      
+      if (amount < 300) {
+          const gulps = Math.max(1, Math.round(amount / 90));
+          return { title: `Take ${gulps} Gulp${gulps > 1 ? 's' : ''}`, icon: "🌊" };
+      }
+      
       return { title: "Drink a Glass", icon: "🥤" };
   };
 
@@ -38,7 +50,7 @@ const WaterReminder: React.FC<Props> = ({ amount, reason, onLog, onSkip }) => {
          </div>
 
          <div className="bg-blue-950/50 rounded-lg p-3 mb-4 flex justify-between items-center border border-blue-800">
-             <span className="text-xs text-blue-300 font-bold uppercase tracking-wider">Calculated Loss</span>
+             <span className="text-xs text-blue-300 font-bold uppercase tracking-wider">Estimated Loss</span>
              <span className="text-xl font-black text-white">~{amount}ml</span>
          </div>
 
@@ -53,7 +65,7 @@ const WaterReminder: React.FC<Props> = ({ amount, reason, onLog, onSkip }) => {
                 onClick={onLog}
                 className="flex-[2] py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-sm shadow-lg shadow-blue-900/50 flex items-center justify-center gap-2"
              >
-                <Droplets size={16} fill="currentColor" /> Drink & Log
+                <Droplets size={16} fill="currentColor" /> Log + Drink
              </button>
          </div>
       </div>
