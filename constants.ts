@@ -4,40 +4,43 @@ import { WorkoutDay, Exercise, PacerConfig } from './types';
 
 // --- PACER TEMPLATES ---
 
+// Standard Hypertrophy: 3-1-1 (Slow Eccentric, Stretch, Explode)
 const PACER_PUSH: PacerConfig = {
   startDelay: 3,
   phases: [
-    { action: 'LOWER', duration: 3, voiceCue: 'Control Down', breathing: 'Inhale' },
-    { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' },
-    { action: 'PRESS', duration: 1, voiceCue: 'Explode Up', breathing: 'Exhale' }
+    { action: 'LOWER', duration: 3.5, voiceCue: 'Control Doooown', breathing: 'Inhale' }, // Slower descent
+    { action: 'STRETCH', duration: 1, voiceCue: 'Deep Stretch', breathing: 'Hold' },
+    { action: 'PRESS', duration: 1.5, voiceCue: 'Push Away!', breathing: 'Exhale' }
   ]
 };
 
+// Pulling: 1-2-3 (Explode, Long Squeeze, Slow Release)
 const PACER_PULL: PacerConfig = {
   startDelay: 3,
   phases: [
-    { action: 'PULL', duration: 1, voiceCue: 'Pull Hard', breathing: 'Exhale' },
-    { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' },
-    { action: 'RELEASE', duration: 3, voiceCue: 'Slow Release', breathing: 'Inhale' }
+    { action: 'PULL', duration: 1.5, voiceCue: 'Pull Hard', breathing: 'Exhale' },
+    { action: 'SQUEEZE', duration: 2, voiceCue: 'Squeeeeeeze', breathing: 'Hold' }, // Longer contraction
+    { action: 'RELEASE', duration: 3.5, voiceCue: 'Slow Release', breathing: 'Inhale' }
   ]
 };
 
+// Isolation: 1-2-2
 const PACER_ISO_HOLD: PacerConfig = {
   startDelay: 3,
   phases: [
-    { action: 'CONTRACT', duration: 1, voiceCue: 'Contract', breathing: 'Exhale' },
-    { action: 'HOLD', duration: 2, voiceCue: 'Hold it', breathing: 'Hold' },
-    { action: 'RETURN', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }
+    { action: 'CONTRACT', duration: 1.5, voiceCue: 'Contract', breathing: 'Exhale' },
+    { action: 'HOLD', duration: 2.5, voiceCue: 'Hold... Hold...', breathing: 'Hold' },
+    { action: 'RETURN', duration: 2.5, voiceCue: 'Control Back', breathing: 'Inhale' }
   ]
 };
 
 const PACER_BREATHING: PacerConfig = {
     startDelay: 3,
     phases: [
-        { action: 'BREATHE IN', duration: 4, voiceCue: 'Inhale', breathing: 'Inhale' },
-        { action: 'HOLD', duration: 4, voiceCue: 'Hold', breathing: 'Hold' },
-        { action: 'BREATHE OUT', duration: 4, voiceCue: 'Exhale', breathing: 'Exhale' },
-        { action: 'HOLD', duration: 4, voiceCue: 'Hold', breathing: 'Hold' }
+        { action: 'BREATHE IN', duration: 4, voiceCue: 'Breathe In...', breathing: 'Inhale' },
+        { action: 'HOLD', duration: 4, voiceCue: 'Hold...', breathing: 'Hold' },
+        { action: 'BREATHE OUT', duration: 4, voiceCue: 'Breathe Out...', breathing: 'Exhale' },
+        { action: 'HOLD', duration: 4, voiceCue: 'Hold...', breathing: 'Hold' }
     ]
 };
 
@@ -58,34 +61,34 @@ const PACER_STOPWATCH: PacerConfig = {
 const PACER_DEADLIFT: PacerConfig = {
   startDelay: 3,
   phases: [
-    { action: 'DRIVE', duration: 1, voiceCue: 'Drive', breathing: 'Exhale' },
-    { action: 'RESET', duration: 1, voiceCue: 'Reset', breathing: 'Inhale' }
+    { action: 'DRIVE', duration: 1.5, voiceCue: 'Drive Floor Away', breathing: 'Exhale' },
+    { action: 'RESET', duration: 2, voiceCue: 'Reset... Slack Out', breathing: 'Inhale' } // Dead stop focus
   ]
 };
 
-const PACER_CONTROLLED_HINGE: PacerConfig = { // 3-1-1
+const PACER_CONTROLLED_HINGE: PacerConfig = { // 4-1-1
   startDelay: 3,
   phases: [
-    { action: 'LOWER', duration: 3, voiceCue: 'Hips Back', breathing: 'Inhale' },
-    { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' },
-    { action: 'UP', duration: 1, voiceCue: 'Drive', breathing: 'Exhale' }
+    { action: 'LOWER', duration: 4, voiceCue: 'Hips Back... Slow', breathing: 'Inhale' },
+    { action: 'STRETCH', duration: 1, voiceCue: 'Feel Stretch', breathing: 'Hold' },
+    { action: 'UP', duration: 1.5, voiceCue: 'Drive Hips', breathing: 'Exhale' }
   ]
 };
 
 const PACER_CALVES: PacerConfig = { // 2-2-1
   startDelay: 3,
   phases: [
-    { action: 'LOWER', duration: 2, voiceCue: 'Down', breathing: 'Inhale' },
-    { action: 'PAUSE', duration: 2, voiceCue: 'Hold', breathing: 'Hold' },
-    { action: 'UP', duration: 1, voiceCue: 'Drive', breathing: 'Exhale' }
+    { action: 'LOWER', duration: 2.5, voiceCue: 'Heels Down', breathing: 'Inhale' },
+    { action: 'PAUSE', duration: 2, voiceCue: 'Wait... Wait...', breathing: 'Hold' }, // Force the pause
+    { action: 'UP', duration: 1.5, voiceCue: 'Explode Up', breathing: 'Exhale' }
   ]
 };
 
 const PACER_CHOP: PacerConfig = {
   startDelay: 2,
   phases: [
-    { action: 'CHOP', duration: 1, voiceCue: 'Chop', breathing: 'Exhale' },
-    { action: 'RETURN', duration: 2, voiceCue: 'Return', breathing: 'Inhale' }
+    { action: 'CHOP', duration: 1.5, voiceCue: 'Chop Down', breathing: 'Exhale' },
+    { action: 'RETURN', duration: 3, voiceCue: 'Resist Back', breathing: 'Inhale' }
   ]
 };
 
@@ -217,7 +220,7 @@ const WARMUP_EXERCISES: Exercise[] = [
     visualize: 'There is a walnut between your shoulder blades. Crack it.', 
     action: "Raise arms to form a 'T'. Squeeze upper back hard at top. Lower slowly.",
     muscleFocus: 'Rear Delts', targetGroup: 'Warmup', feeling: 'Tightness between shoulder blades', isWarmup: true, 
-    pacer: { startDelay: 2, phases: [{ action: 'LIFT', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 2, voiceCue: 'Crack Walnut', breathing: 'Hold' }, { action: 'LOWER', duration: 1, voiceCue: 'Down', breathing: 'Inhale' }] }, 
+    pacer: { startDelay: 2, phases: [{ action: 'LIFT', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 2, voiceCue: 'Squeeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Down Slow', breathing: 'Inhale' }] }, 
     metValue: 3.0, muscleSplit: { 'Rear Delts': 50, 'Rhomboids': 50 }, motionType: 'fly', isCompound: false,
     detailedSteps: [
         "Stand with feet hip-width apart.",
@@ -237,7 +240,7 @@ const WARMUP_EXERCISES: Exercise[] = [
     visualize: 'Melting your chest through your arms towards the floor.', 
     action: 'Rock hips back to heels. Drop head between biceps. Feel deep stretch. Rock forward.',
     muscleFocus: 'Upper Back Mobility', targetGroup: 'Warmup', feeling: 'Deep stretch in armpits/spine', isWarmup: true, 
-    pacer: { startDelay: 2, phases: [{ action: 'ROCK BACK', duration: 2, voiceCue: 'Hips Back', breathing: 'Exhale' }, { action: 'STRETCH', duration: 2, voiceCue: 'Deep Stretch', breathing: 'Hold' }, { action: 'FORWARD', duration: 1, voiceCue: 'Release', breathing: 'Inhale' }] }, 
+    pacer: { startDelay: 2, phases: [{ action: 'ROCK BACK', duration: 2, voiceCue: 'Hips Back', breathing: 'Exhale' }, { action: 'STRETCH', duration: 3, voiceCue: 'Deep Stretch', breathing: 'Hold' }, { action: 'FORWARD', duration: 2, voiceCue: 'Release', breathing: 'Inhale' }] }, 
     metValue: 2.5, muscleSplit: { 'Spine': 80, 'Lats': 20 }, motionType: 'hold', isCompound: false,
     detailedSteps: [
         "Kneel on the floor in front of a flat bench.",
@@ -256,7 +259,7 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Stand on one leg or both. Soft knees.', 
     visualize: 'Closing a car door with your butt.', 
     action: 'Push hips back. Feel hamstring stretch. Stand up.',
-    muscleFocus: 'Hamstrings', targetGroup: 'Warmup', feeling: 'Stretch in back of legs', isWarmup: true, pacer: PACER_FAST, metValue: 3.0, muscleSplit: { 'Hamstrings': 80, 'Glutes': 20 }, motionType: 'hinge', isCompound: false,
+    muscleFocus: 'Hamstrings', targetGroup: 'Warmup', feeling: 'Stretch in back of legs', isWarmup: true, pacer: PACER_CONTROLLED_HINGE, metValue: 3.0, muscleSplit: { 'Hamstrings': 80, 'Glutes': 20 }, motionType: 'hinge', isCompound: false,
     detailedSteps: [
         "Stand tall with feet hip-width apart.",
         "Soften your knees slightly (do not lock them).",
@@ -288,7 +291,7 @@ const WARMUP_EXERCISES: Exercise[] = [
     setup: 'Plank position. Hands shoulder width.', 
     visualize: 'Pushing the earth away.', 
     action: 'Lower chest to floor. Press up explosively.',
-    muscleFocus: 'Chest/Tris', targetGroup: 'Warmup', feeling: 'Upper body pump', isWarmup: true, pacer: PACER_FAST, metValue: 3.8, muscleSplit: { 'Chest': 60, 'Triceps': 20, 'Shoulders': 20 }, motionType: 'press', isCompound: true,
+    muscleFocus: 'Chest/Tris', targetGroup: 'Warmup', feeling: 'Upper body pump', isWarmup: true, pacer: PACER_PUSH, metValue: 3.8, muscleSplit: { 'Chest': 60, 'Triceps': 20, 'Shoulders': 20 }, motionType: 'press', isCompound: true,
     detailedSteps: [
         "Get into a high plank position. Hands slightly wider than shoulders.",
         "Engage your core and squeeze your glutes. Your body should be a straight line.",
@@ -370,7 +373,7 @@ export const PUSH_A_DAY: WorkoutDay = {
               visualize: 'Tucking the handles into your front pockets.',
               action: 'Keep elbows locked with slight bend. Pull handles down and together until they touch at your waist. Squeeze hard. Return slowly to shoulder height.',
               muscleFocus: 'Lower Chest', targetGroup: 'Chest', feeling: 'Squeeze in lower outer pecs.',
-              pacer: { startDelay: 3, phases: [{ action: 'PULL DOWN', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'STRETCH', duration: 3, voiceCue: 'Up Slow', breathing: 'Inhale' }] },
+              pacer: { startDelay: 3, phases: [{ action: 'PULL DOWN', duration: 1.5, voiceCue: 'Pull Down', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 2, voiceCue: 'Squeeeeze', breathing: 'Hold' }, { action: 'STRETCH', duration: 3.5, voiceCue: 'Slow Back', breathing: 'Inhale' }] },
               metValue: 5.0, muscleSplit: { 'Lower Chest': 80, 'Triceps': 10, 'Front Delts': 10 }, motionType: 'fly', isCompound: false,
               swapLabel: 'SAFER (Hand Injury / Joint Friendly)',
               detailedSteps: [
@@ -412,7 +415,7 @@ export const PUSH_A_DAY: WorkoutDay = {
       visualize: 'Stretching the tricep like a rubber band.',
       action: 'Lower weight behind head until deep stretch. Press up to ceiling.',
       muscleFocus: 'Tricep Long Head', targetGroup: 'Triceps', feeling: 'Stretch in back of arm.', 
-      pacer: { startDelay: 3, phases: [{ action: 'LOWER', duration: 3, voiceCue: 'Down Slow', breathing: 'Inhale' }, { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' }, { action: 'PRESS', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }] }, 
+      pacer: { startDelay: 3, phases: [{ action: 'LOWER', duration: 3.5, voiceCue: 'Control Down', breathing: 'Inhale' }, { action: 'STRETCH', duration: 1, voiceCue: 'Big Stretch', breathing: 'Hold' }, { action: 'PRESS', duration: 1.5, voiceCue: 'Press Up', breathing: 'Exhale' }] }, 
       metValue: 4.0, muscleSplit: { 'Long Head Triceps': 80, 'Triceps': 20 }, motionType: 'press', isCompound: false,
       facts: ["The long head of the triceps is the only head that crosses the shoulder joint, meaning it is stretched most in the overhead position.", "Full range of motion in this exercise has been shown to increase hypertrophy significantly."],
       detailedSteps: [
@@ -432,7 +435,7 @@ export const PUSH_A_DAY: WorkoutDay = {
             visualize: 'Elbows glued to your ears.',
             action: 'Let the rope pull your hands deep behind your head for a painful stretch. Extend forward.',
             muscleFocus: 'Tricep Long Head', targetGroup: 'Triceps', feeling: 'Tearing sensation in tricep.',
-            pacer: { startDelay: 3, phases: [{ action: 'STRETCH', duration: 3, voiceCue: 'Stretch Back', breathing: 'Inhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Deep Stretch', breathing: 'Hold' }, { action: 'EXPLODE', duration: 1, voiceCue: 'Fire', breathing: 'Exhale' }] },
+            pacer: { startDelay: 3, phases: [{ action: 'STRETCH', duration: 3.5, voiceCue: 'Stretch Back', breathing: 'Inhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Deep Stretch', breathing: 'Hold' }, { action: 'EXPLODE', duration: 1.5, voiceCue: 'Fire', breathing: 'Exhale' }] },
             metValue: 4.0, muscleSplit: { 'Long Head Triceps': 90, 'Triceps': 10 }, motionType: 'press', isCompound: false,
             swapLabel: 'BETTER (Smoother Tension)',
             detailedSteps: [
@@ -454,7 +457,7 @@ export const PUSH_A_DAY: WorkoutDay = {
       visualize: 'Hugging a giant tree trunk.',
       action: 'Open arms wide until chest stretches. Squeeze back to top.',
       muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Chest stretch.', 
-      pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
+      pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3.5, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1.5, voiceCue: 'Squeeeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
       metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false,
       facts: ["Fly movements isolate the pectorals by removing the triceps from the equation.", "Focus on the stretch at the bottom; this is where the most muscle damage for growth occurs."],
       detailedSteps: [
@@ -474,7 +477,7 @@ export const PUSH_A_DAY: WorkoutDay = {
               visualize: 'Hugging a giant tree trunk.',
               action: 'Open arms wide (3s). Don\'t let weight stack touch. Squeeze at center (1s).',
               muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.',
-              pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] },
+              pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3.5, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1.5, voiceCue: 'Squeeeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] },
               metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false,
               swapLabel: 'BETTER (Constant Tension)',
               detailedSteps: [
@@ -548,7 +551,7 @@ export const PULL_A_DAY: WorkoutDay = {
               visualize: 'Cracking a walnut between your shoulder blades.',
               action: 'Pull handle to stomach (1s). Squeeze (1s). Release forward (3s).',
               muscleFocus: 'Mid-Back', targetGroup: 'Back', feeling: 'Pinching a pencil between blades.',
-              pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] },
+              pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1.5, voiceCue: 'Pull Hard', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 2, voiceCue: 'Squeeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3.5, voiceCue: 'Slow Release', breathing: 'Inhale' }] },
               metValue: 6.0, muscleSplit: { 'Mid Back': 70, 'Lats': 20, 'Biceps': 10 }, motionType: 'pull', isCompound: true,
               swapLabel: 'ALTERNATIVE (Equal)',
               detailedSteps: [
@@ -590,7 +593,7 @@ export const PULL_A_DAY: WorkoutDay = {
       visualize: 'Arms dead-hanging behind you.',
       action: 'Keep elbows locked in place. Curl up without swinging. Squeeze peak at the top.',
       muscleFocus: 'Bicep Long Head', targetGroup: 'Biceps', feeling: 'Stretch in bicep near shoulder.', 
-      pacer: { ...PACER_PULL, phases: [{ action: 'CURL', duration: 1, voiceCue: 'Curl Up', breathing: 'Exhale' }, { action: 'LOWER', duration: 3, voiceCue: 'Slow Down', breathing: 'Inhale' }] }, 
+      pacer: { ...PACER_PULL, phases: [{ action: 'CURL', duration: 1.5, voiceCue: 'Curl Up', breathing: 'Exhale' }, { action: 'LOWER', duration: 3.5, voiceCue: 'Slow Down', breathing: 'Inhale' }] }, 
       metValue: 4.0, muscleSplit: { 'Bicep Long Head': 80, 'Biceps': 20 }, motionType: 'curl', isCompound: false,
       benchAngle: 60,
       facts: ["The incline position places the shoulder in extension, which maximally stretches the long head of the biceps.", "This exercise is excellent for building the 'peak' of the bicep."],
@@ -610,7 +613,7 @@ export const PULL_A_DAY: WorkoutDay = {
       visualize: 'Isolating the biceps completely.',
       action: 'Curl weight up. Lower slowly until arms are straight.',
       muscleFocus: 'Bicep Short Head', targetGroup: 'Biceps', feeling: 'Bicep burn.', 
-      pacer: { startDelay: 3, phases: [{ action: 'CURL', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'LOWER', duration: 3, voiceCue: 'Control', breathing: 'Inhale' }] }, 
+      pacer: { startDelay: 3, phases: [{ action: 'CURL', duration: 1.5, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'LOWER', duration: 3.5, voiceCue: 'Control', breathing: 'Inhale' }] }, 
       metValue: 4.0, muscleSplit: { 'Bicep Short Head': 80, 'Brachialis': 20 }, motionType: 'curl', isCompound: false,
       facts: ["Preacher curls prevent momentum and isolate the short head of the biceps.", "Fully extending the arm at the bottom is safe and necessary for full range of motion."],
       detailedSteps: [
@@ -629,7 +632,7 @@ export const PULL_A_DAY: WorkoutDay = {
               visualize: 'Driving triceps into the pad.',
               action: 'Curl up (1s). Lower slowly (3s). Keep a slight bend at bottom to maintain tension.',
               muscleFocus: 'Bicep Short Head', targetGroup: 'Biceps', feeling: 'Isolated bicep pump.',
-              pacer: { startDelay: 3, phases: [{ action: 'CURL', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'LOWER', duration: 3, voiceCue: 'Control', breathing: 'Inhale' }] },
+              pacer: { startDelay: 3, phases: [{ action: 'CURL', duration: 1.5, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'LOWER', duration: 3.5, voiceCue: 'Control', breathing: 'Inhale' }] },
               metValue: 4.0, muscleSplit: { 'Bicep Short Head': 80, 'Brachialis': 20 }, motionType: 'curl', isCompound: false,
               swapLabel: 'BETTER (Locked Axis)',
               detailedSteps: [
@@ -721,7 +724,7 @@ export const LEGS_POWER_DAY: WorkoutDay = {
       visualize: 'Show the bottom of your feet to the wall in front of you.',
       action: 'Curl knees/legs up. Round your lower back slightly at top. Lower slowly without swinging.',
       muscleFocus: 'Lower Abs', targetGroup: 'Abs', feeling: 'Deep abdominal crunch.',
-      pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 2, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }] }, 
+      pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 2, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 3, voiceCue: 'Control', breathing: 'Inhale' }] }, 
       metValue: 4.0, muscleSplit: { 'Abs': 80, 'Hip Flexors': 20 }, motionType: 'hold', isCompound: false,
       detailedSteps: [
           "Hang from a pull-up bar with an overhand grip.",
@@ -843,7 +846,7 @@ export const PUSH_B_DAY: WorkoutDay = {
       visualize: 'Hugging a giant tree trunk.',
       action: 'Open arms wide (3s). Don\'t let weight stack touch. Squeeze at center (1s).',
       muscleFocus: 'Inner Chest', targetGroup: 'Chest', feeling: 'Intense contraction.', 
-      pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
+      pacer: { startDelay: 3, phases: [{ action: 'OPEN', duration: 3.5, voiceCue: 'Open Wide', breathing: 'Inhale' }, { action: 'SQUEEZE', duration: 1.5, voiceCue: 'Squeeeeze', breathing: 'Exhale' }, { action: 'CLOSE', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] }, 
       metValue: 4.5, muscleSplit: { 'Chest': 100 }, motionType: 'fly', isCompound: false,
       detailedSteps: [
           "Adjust seat height so handles are level with your mid-chest.",
@@ -894,7 +897,7 @@ export const PULL_B_DAY: WorkoutDay = {
       visualize: 'Driving elbows to ceiling.',
       action: 'Explode up to lower chest. Control down.',
       muscleFocus: 'Upper Back', targetGroup: 'Back', feeling: 'Upper back thickness.', 
-      pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] }, 
+      pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1.5, voiceCue: 'Pull Hard', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1.5, voiceCue: 'Squeeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3.5, voiceCue: 'Slow Release', breathing: 'Inhale' }] }, 
       metValue: 6.0, muscleSplit: { 'Upper Back': 80, 'Rear Delts': 20 }, motionType: 'pull', isCompound: true,
       detailedSteps: [
           "Stand with feet shoulder-width apart, holding a barbell with a wide overhand grip.",
@@ -913,7 +916,7 @@ export const PULL_B_DAY: WorkoutDay = {
               visualize: 'Spreading your elbows wide.',
               action: 'Pull bar to upper abs/lower chest (1s). Keep elbows flared (1s). Release (3s).',
               muscleFocus: 'Upper Back', targetGroup: 'Back', feeling: 'Upper back thickness.',
-              pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1, voiceCue: 'Pull', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3, voiceCue: 'Release', breathing: 'Inhale' }] },
+              pacer: { startDelay: 3, phases: [{ action: 'PULL', duration: 1.5, voiceCue: 'Pull Hard', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1.5, voiceCue: 'Squeeeze', breathing: 'Hold' }, { action: 'RELEASE', duration: 3.5, voiceCue: 'Slow Release', breathing: 'Inhale' }] },
               metValue: 6.0, muscleSplit: { 'Upper Back': 80, 'Rear Delts': 20 }, motionType: 'pull', isCompound: true,
               swapLabel: 'ALTERNATIVE (Safer for Lower Back)',
               detailedSteps: [
@@ -952,7 +955,7 @@ export const PULL_B_DAY: WorkoutDay = {
               visualize: 'Trying to touch the side walls with your knuckles.',
               action: 'Push hands back (2s). Hold (1s). Forward (1s). Don\'t shrug.',
               muscleFocus: 'Rear Delts', targetGroup: 'Shoulders', feeling: 'Rear shoulder isolation.',
-              pacer: { startDelay: 3, phases: [{ action: 'BACK', duration: 2, voiceCue: 'Push Back', breathing: 'Exhale' }, { action: 'HOLD', duration: 1, voiceCue: 'Hold', breathing: 'Hold' }, { action: 'RETURN', duration: 1, voiceCue: 'Return', breathing: 'Inhale' }] },
+              pacer: { startDelay: 3, phases: [{ action: 'BACK', duration: 1.5, voiceCue: 'Push Back', breathing: 'Exhale' }, { action: 'HOLD', duration: 1.5, voiceCue: 'Hold', breathing: 'Hold' }, { action: 'RETURN', duration: 3, voiceCue: 'Control Back', breathing: 'Inhale' }] },
               metValue: 4.5, muscleSplit: { 'Rear Delts': 100 }, motionType: 'fly', isCompound: false,
               swapLabel: 'BETTER (Isolates Rear Delt)',
               detailedSteps: [
@@ -1039,7 +1042,7 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       visualize: 'Use your hamstrings to pull you up, not your lower back.',
       action: 'Hug plate to chest. Lower until stretch felt. Pull up until body is straight line.',
       muscleFocus: 'Posterior Chain', targetGroup: 'Back', feeling: 'Glute/Ham/Lower Back pump.',
-      pacer: { startDelay: 2, phases: [{ action: 'LOWER', duration: 2, voiceCue: 'Down', breathing: 'Inhale' }, { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' }, { action: 'UP', duration: 1, voiceCue: 'Up', breathing: 'Exhale' }] },
+      pacer: { startDelay: 2, phases: [{ action: 'LOWER', duration: 3, voiceCue: 'Down Slow', breathing: 'Inhale' }, { action: 'STRETCH', duration: 1, voiceCue: 'Stretch', breathing: 'Hold' }, { action: 'UP', duration: 1.5, voiceCue: 'Squeeeze Up', breathing: 'Exhale' }] },
       metValue: 4.5, muscleSplit: { 'Hamstrings': 40, 'Glutes': 40, 'Lower Back': 20 }, motionType: 'hinge', isCompound: false,
       detailedSteps: [
           "Adjust the pad so it sits just below your hip bone.",
@@ -1074,7 +1077,7 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
       visualize: 'Curling your tailbone to your belly button.',
       action: 'Lift legs. Focus on the pelvic curl at the top. Lower with control.',
       muscleFocus: 'Abs', targetGroup: 'Abs', feeling: 'Abdominal cramping.',
-      pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 1, voiceCue: 'Curl', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1, voiceCue: 'Squeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 2, voiceCue: 'Control', breathing: 'Inhale' }] },
+      pacer: { startDelay: 2, phases: [{ action: 'CURL UP', duration: 1.5, voiceCue: 'Curl Up', breathing: 'Exhale' }, { action: 'SQUEEZE', duration: 1.5, voiceCue: 'Squeeeze', breathing: 'Hold' }, { action: 'LOWER', duration: 3, voiceCue: 'Control Down', breathing: 'Inhale' }] },
       metValue: 4.0, muscleSplit: { 'Abs': 100 }, motionType: 'hold', isCompound: false,
       detailedSteps: [
           "Hang from a pull-up bar.",

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, Pause, Volume2, VolumeX, Wind, RotateCcw, Smartphone, Waves } from 'lucide-react';
 import { Exercise, PacerPhase } from '../types';
@@ -78,35 +79,46 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
 
   // --- AUDIO & HAPTICS ---
   const elongateWord = (text: string, duration: number) => {
-      // If duration is short, don't elongate
-      if (duration <= 1) return text;
+      // Only elongate if there's enough time
+      if (duration <= 1.2) return text;
 
       const lower = text.toLowerCase();
       
-      // Manual elongation mapping for TTS
-      if (lower.includes('explode')) return "Ex-ploooode";
+      // Manual elongation mapping for realistic speech
+      if (lower.includes('control')) return "Con-trooool";
+      if (lower.includes('down')) return "Dooooown";
       if (lower.includes('squeeze')) return "Squeeeeeeeze";
-      if (lower.includes('push')) return "Puuuuuuush";
-      if (lower.includes('pull')) return "Puuuuuuull";
       if (lower.includes('hold')) return "Hooooooold";
-      if (lower.includes('down')) return "Doooooooown";
       if (lower.includes('stretch')) return "Streeeeeetch";
-      if (lower.includes('drive')) return "Driiiiiiive";
+      if (lower.includes('release')) return "Re-leeeeease";
+      if (lower.includes('pull')) return "Puuuuuuull";
+      if (lower.includes('push')) return "Puuuuuuush";
+      if (lower.includes('lower')) return "Low-errrrr";
       
       return text;
   };
 
-  const speak = (text: string, duration: number) => {
+  const speak = (text: string, duration: number = 1.0) => {
     if (isMutedRef.current || !synthRef.current || !text) return;
+    
+    // Always cancel previous speech to ensure tight timing
     synthRef.current.cancel();
     
     const stretchedText = elongateWord(text, duration);
     const u = new SpeechSynthesisUtterance(stretchedText);
     
-    // ULTRA SLOW for realism
-    u.rate = duration > 1.5 ? 0.4 : 1.0; 
-    u.pitch = 1.0;
+    // ADJUST RATE BASED ON DURATION
+    // For long eccentric phases (3s+), we want slow, calming speech.
+    // For explosive concentric phases (<1.5s), we want normal speed.
+    if (duration >= 3.0) {
+        u.rate = 0.6; // Very Slow
+    } else if (duration >= 2.0) {
+        u.rate = 0.8; // Slow
+    } else {
+        u.rate = 1.1; // Snappy
+    }
     
+    u.pitch = 1.0;
     synthRef.current.speak(u);
   };
 
@@ -121,27 +133,31 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       const a = action.toUpperCase();
       const ms = duration * 1000;
 
-      // 1. ISOMETRIC / STATIC (Hold/Stretch/Pause) -> SILENCE
-      if (['HOLD', 'SQUEEZE', 'STRETCH', 'PAUSE', 'WAIT'].some(k => a.includes(k))) {
+      // 1. ISOMETRIC / STATIC (Hold/Stretch/Pause) -> SILENCE or very faint tick
+      if (['HOLD', 'STRETCH', 'PAUSE', 'WAIT'].some(k => a.includes(k))) {
           return []; 
       }
 
-      // 2. ECCENTRIC (Lowering/Returning) -> LOOPING HEARTBEAT
+      // 2. ECCENTRIC (Lowering/Returning) -> "TICKING CLOCK" / "HEARTBEAT"
+      // This helps user count the seconds down: Tick... Tick... Tick...
       if (['LOWER', 'RELEASE', 'RETURN', 'DOWN', 'CONTROL', 'RESET'].some(k => a.includes(k))) {
           const pattern: number[] = [];
-          let acc = 0;
-          while (acc < ms - 200) {
-              pattern.push(80);  // Lub
-              pattern.push(120); // gap
-              pattern.push(80);  // Dub
-              pattern.push(720); // Long gap
-              acc += 1000;
+          // Create a tick every second
+          const ticks = Math.floor(duration);
+          for(let i=0; i<ticks; i++) {
+              pattern.push(50); // Short tick
+              pattern.push(950); // Wait 1s
           }
           return pattern;
       }
 
-      // 3. CONCENTRIC (Explosive/Drive) -> CONTINUOUS
-      return [ms];
+      // 3. CONCENTRIC (Explosive/Drive/Squeeze) -> STRONG BUZZ
+      // Continuous feedback for effort
+      if (['SQUEEZE', 'CONTRACT', 'PULL', 'PUSH', 'PRESS', 'DRIVE', 'UP', 'CURL', 'RAISE', 'CHOP'].some(k => a.includes(k))) {
+           return [ms > 1000 ? 600 : ms]; // Cap buzz at 600ms so it doesn't feel weird
+      }
+
+      return [100];
   };
 
   // --- LOGIC ---
@@ -208,7 +224,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       setCurrentPhaseIndex(idx);
       phaseStartTimeRef.current = Date.now();
 
-      // Audio Cue - Pass Duration for Elongation
+      // Audio Cue
       if (phase.voiceCue) speak(phase.voiceCue, phase.duration);
       
       // Haptic Cue
@@ -237,13 +253,15 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                   setReps(prev => {
                       const n = prev + 1;
                       onRepCount(n);
+                      // Speak the Rep Number audibly
                       speak(String(n), 0.5);
                       // Rep Complete: Success Triple-Beat
                       triggerHaptic([100, 80, 100, 80, 300]); 
                       return n;
                   });
               }
-              runPhase(0);
+              // Wait slightly before starting next rep so speech doesn't overlap immediately
+              setTimeout(() => runPhase(0), 100);
           } else {
               // NEXT PHASE
               runPhase(nextIdx);
@@ -324,7 +342,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
        <div className="p-4 flex justify-between items-center border-b border-gym-700 bg-gym-800">
             <div>
                 <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
-                <p className="text-xs text-gym-accent font-mono tracking-widest">{exercise.isTimed ? 'TIMER MODE' : 'PACER MODE'}</p>
+                <p className="text-xs text-gym-accent font-mono tracking-widest">{exercise.isTimed ? 'TIMER MODE' : 'HYPERTROPHY PACER'}</p>
             </div>
             <div className="flex gap-3">
                 <button 
@@ -422,8 +440,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                    {/* HAPTIC LEGEND (Visual Feedback) */}
                    {isHapticsEnabledState && (
                        <p className="absolute bottom-24 text-[10px] text-gray-500 uppercase font-mono tracking-widest animate-pulse w-full text-center">
-                           {['HOLD','SQUEEZE','STRETCH'].some(k=>currentPhase.action.includes(k)) ? '∅ SILENCE (HOLD)' : 
-                            ['LOWER','DOWN','RETURN'].some(k=>currentPhase.action.includes(k)) ? '♥ HEARTBEAT (CONTROL)' : 
+                           {['HOLD','SQUEEZE','STRETCH','PAUSE'].some(k=>currentPhase.action.toUpperCase().includes(k)) ? '∅ SILENCE (HOLD)' : 
+                            ['LOWER','DOWN','RETURN','RELEASE'].some(k=>currentPhase.action.toUpperCase().includes(k)) ? '♥ HEARTBEAT (CONTROL)' : 
                             '〰 CONTINUOUS (DRIVE)'}
                        </p>
                    )}
