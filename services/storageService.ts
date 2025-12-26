@@ -1,5 +1,4 @@
-
-import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise } from '../types';
+import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise, TempoRating, NutritionLog } from '../types';
 import { ALL_WORKOUTS } from '../constants';
 
 // --- KEY MANAGEMENT SYSTEM ---
@@ -18,6 +17,7 @@ const BASE_KEYS = {
   NOTES: 'iron_guide_notes_v1',
   SKIPPED: 'iron_guide_skipped_v1', // Track skip history
   PENDING: 'iron_guide_pending_v1', // Track rescheduled items
+  NUTRITION: 'iron_guide_nutrition_v1', // Track calorie intake
 };
 
 // State to hold current user ID in memory
@@ -129,6 +129,7 @@ export const exportUserData = () => {
       notes: localStorage.getItem(getKey(BASE_KEYS.NOTES)),
       skipped: localStorage.getItem(getKey(BASE_KEYS.SKIPPED)),
       pending: localStorage.getItem(getKey(BASE_KEYS.PENDING)),
+      nutrition: localStorage.getItem(getKey(BASE_KEYS.NUTRITION)),
     }
   };
 
@@ -169,6 +170,7 @@ export const importUserData = async (file: File): Promise<boolean> => {
         if (json.data.notes) localStorage.setItem(getKey(BASE_KEYS.NOTES), json.data.notes);
         if (json.data.skipped) localStorage.setItem(getKey(BASE_KEYS.SKIPPED), json.data.skipped);
         if (json.data.pending) localStorage.setItem(getKey(BASE_KEYS.PENDING), json.data.pending);
+        if (json.data.nutrition) localStorage.setItem(getKey(BASE_KEYS.NUTRITION), json.data.nutrition);
 
         resolve(true);
       } catch (e) {
@@ -235,6 +237,39 @@ export const loadUserStats = (): UserStats => {
       ...parsed,
       creatineHistory: parsed.creatineHistory || []
   };
+};
+
+// --- NUTRITION LOGIC ---
+
+export const logNutrition = (calories: number, name: string) => {
+    const key = getKey(BASE_KEYS.NUTRITION);
+    const raw = localStorage.getItem(key);
+    const logs: NutritionLog[] = raw ? JSON.parse(raw) : [];
+    
+    const newLog: NutritionLog = {
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        date: getTodayString(),
+        calories,
+        name: name || "Snack"
+    };
+    
+    logs.push(newLog);
+    localStorage.setItem(key, JSON.stringify(logs));
+    return newLog;
+};
+
+export const getNutritionLogs = (): NutritionLog[] => {
+    const raw = localStorage.getItem(getKey(BASE_KEYS.NUTRITION));
+    return raw ? JSON.parse(raw) : [];
+};
+
+export const getTodayNutritionTotal = (): number => {
+    const logs = getNutritionLogs();
+    const today = getTodayString();
+    return logs
+        .filter(l => l.date === today)
+        .reduce((sum, l) => sum + l.calories, 0);
 };
 
 // --- NOTES FEATURE ---
@@ -358,7 +393,7 @@ export const calculateCalories = (metric1: number, metric2: number, metValue: nu
 
 // --- History Management ---
 
-export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number, rpe?: number) => {
+export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number, rpe?: number, tempoRating?: TempoRating) => {
   const key = getKey(BASE_KEYS.HISTORY);
   const historyRaw = localStorage.getItem(key);
   const history = historyRaw ? JSON.parse(historyRaw) : {};
@@ -370,7 +405,8 @@ export const saveExerciseLog = (exerciseId: string, weight: number, reps: number
     weight,
     reps,
     setNumber,
-    rpe
+    rpe,
+    tempoRating
   };
   
   // Append new log
@@ -410,7 +446,7 @@ export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null =
 
     lastSession = {
       date: lastDate,
-      topSet: { weight: bestLog.weight, reps: bestLog.reps, rpe: bestLog.rpe }
+      topSet: { weight: bestLog.weight, reps: bestLog.reps, rpe: bestLog.rpe, tempoRating: bestLog.tempoRating }
     };
   }
 
@@ -484,6 +520,7 @@ export const clearAllData = () => {
       localStorage.removeItem(getKey(BASE_KEYS.NOTES));
       localStorage.removeItem(getKey(BASE_KEYS.SKIPPED));
       localStorage.removeItem(getKey(BASE_KEYS.PENDING));
+      localStorage.removeItem(getKey(BASE_KEYS.NUTRITION));
   }
   window.location.reload();
 };
@@ -525,7 +562,7 @@ export const getDashboardStats = (): DashboardStats => {
   let bestLift: { weight: number; exerciseName: string } | null = null;
   
   // 3. Calories
-  let totalCalories = 0;
+  let totalCaloriesBurned = 0;
 
   Object.keys(fullHistory).forEach(exerciseId => {
     const logs = fullHistory[exerciseId] as HistoryLog[];
@@ -565,7 +602,7 @@ export const getDashboardStats = (): DashboardStats => {
          
          const isCardio = exerciseDef?.type === 'cardio';
          const setCals = calculateCalories(log.weight, log.reps, exerciseDef?.metValue || 4, isCardio);
-         totalCalories += setCals;
+         totalCaloriesBurned += setCals;
       }
     });
 
@@ -581,12 +618,22 @@ export const getDashboardStats = (): DashboardStats => {
   const trackedMuscles: MuscleGroup[] = ['Chest', 'Back', 'Legs', 'Shoulders', 'Triceps', 'Biceps', 'Abs'];
   const missedMuscles = trackedMuscles.filter(m => weeklyVolume[m] === 0);
 
+  // 4. Nutrition Stats (Week)
+  const nutritionLogs = getNutritionLogs();
+  const weekNutritionLogs = nutritionLogs.filter(l => new Date(l.date) >= startOfWeek);
+  const totalCaloriesIn = weekNutritionLogs.reduce((sum, log) => sum + log.calories, 0);
+
+  // Limit to last 20 logs for the dashboard object to keep it light, sorted newest first
+  const recentLogs = nutritionLogs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 20);
+
   return {
     weeklyVolume,
     missedMuscles,
     personalRecords,
     bestLift,
-    totalCalories: Math.round(totalCalories)
+    totalCaloriesBurned: Math.round(totalCaloriesBurned),
+    totalCaloriesIn: Math.round(totalCaloriesIn),
+    nutritionLogs: recentLogs
   };
 };
 
@@ -720,227 +767,165 @@ export const getCreatineStats = (history: string[]) => {
   return { thisWeek, thisMonth };
 };
 
-// --- PROGRESSION ENGINE (Linear Progression - Auto Pilot) ---
+// --- COACHING & SUMMARY SERVICES ---
 
-const parseRepRange = (repStr: string): { min: number, max: number } => {
-  // Handles "8-10", "15", "Failure"
-  if (repStr.toLowerCase().includes('fail')) return { min: 8, max: 99 };
-  if (repStr.includes('-')) {
-    const [min, max] = repStr.split('-').map(Number);
-    return { min, max };
-  }
-  const val = parseInt(repStr);
-  return { min: val, max: val };
-};
+export interface ReceiptData {
+  date: string;
+  duration: string;
+  totalVolume: number;
+  exercises: {
+    name: string;
+    sets: number;
+    bestWeight: number;
+    isPR: boolean;
+    isCardio: boolean;
+  }[];
+  quote: string;
+}
 
-const roundToPlate = (weight: number) => {
-    // Rounds to nearest 1.25kg (standard fractional plate logic)
-    return Math.round(weight / 1.25) * 1.25;
-};
+export const getSessionSummary = (session: SessionData): ReceiptData => {
+  const startTime = session.startTime;
+  const endTime = Date.now();
+  const durationMs = endTime - startTime;
+  const hours = Math.floor(durationMs / 3600000);
+  const minutes = Math.floor((durationMs % 3600000) / 60000);
+  const durationStr = `${hours > 0 ? hours + 'h ' : ''}${minutes}m`;
 
-export const getProgressionRecommendation = (exercise: Exercise): CoachRecommendation => {
-  // WARMUP EXCLUSION
-  if (exercise.isWarmup) {
-      return { type: 'BASELINE', targetWeight: 0, targetReps: exercise.reps, reason: "Warmup set." };
-  }
+  const dateStr = new Date(startTime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
-  const history = getExerciseHistory(exercise.id);
-  
-  // Default for new exercise
-  if (!history || !history.lastSession) {
-    return {
-      type: 'BASELINE',
-      targetWeight: 0,
-      targetReps: exercise.reps,
-      reason: "No history found. Find a weight where you reach failure within the target range."
-    };
-  }
+  let totalVolume = 0;
+  const exercisesSummary: ReceiptData['exercises'] = [];
 
-  const { topSet } = history.lastSession;
-  const { min } = parseRepRange(exercise.reps);
-  
-  // If no RPE recorded yet, fallback to old logic (Did we hit target reps?)
-  if (topSet.rpe === undefined) {
-      if (topSet.reps >= min) {
-          const jump = exercise.isCompound ? 2.5 : 1.25;
-          return {
-              type: 'INCREASE',
-              targetWeight: topSet.weight + jump,
-              targetReps: exercise.reps,
-              reason: `History found (No RPE). You hit ${topSet.reps} reps. Increase weight by ${jump}kg.`
-          };
-      } else {
-          return {
-              type: 'MAINTAIN',
-              targetWeight: topSet.weight,
-              targetReps: exercise.reps,
-              reason: "History found (No RPE). Maintain weight until you hit target reps."
-          };
-      }
-  }
+  const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
+  const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
+  const today = getTodayString();
 
-  const rpe = topSet.rpe;
+  Object.entries(session.completedExercises).forEach(([exId, logs]) => {
+    if (logs.length === 0) return;
 
-  // --- AUTO-PILOT ALGORITHM ---
+    let exerciseName = "Unknown Exercise";
+    let isCardio = false;
 
-  // 1. Missed Reps (Failure)
-  if (topSet.reps < min) {
-      const newWeight = roundToPlate(topSet.weight * 0.90); // -10% Deload
-      return {
-          type: 'DECREASE',
-          targetWeight: newWeight,
-          targetReps: exercise.reps,
-          reason: `Missed reps (${topSet.reps} vs ${min}). Auto-Deload -10% to reset form.`
-      };
-  }
+    // Find exercise definition
+    // Check custom first
+    let foundEx = session.customExercises?.find(e => e.id === exId);
+    if (!foundEx) {
+        // Check standard
+        foundEx = ALL_WORKOUTS.flatMap(w => w.exercises).find(e => e.id === exId);
+    }
+    
+    if (foundEx) {
+        exerciseName = foundEx.name;
+        isCardio = foundEx.type === 'cardio';
+    }
 
-  // 2. Too Easy (RPE < 7)
-  if (rpe < 7) {
-      const newWeight = roundToPlate(topSet.weight * 1.05); // +5%
-      return {
-          type: 'INCREASE',
-          targetWeight: newWeight,
-          targetReps: exercise.reps,
-          reason: `RPE ${rpe} (Too Easy). Auto-Pilot increasing load by +5%.`
-      };
-  }
+    let bestWeight = 0;
+    
+    logs.forEach(l => {
+        if (!isCardio) {
+            totalVolume += l.weight * l.reps;
+        } else {
+             totalVolume += l.weight; // km
+        }
 
-  // 3. Perfect (RPE 7-8)
-  if (rpe >= 7 && rpe <= 8) {
-      const newWeight = roundToPlate(topSet.weight * 1.025); // +2.5%
-      return {
-          type: 'INCREASE',
-          targetWeight: newWeight,
-          targetReps: exercise.reps,
-          reason: `RPE ${rpe} (Perfect Zone). Auto-Pilot Micro-loading +2.5%.`
-      };
-  }
+        if (l.weight > bestWeight) bestWeight = l.weight;
+    });
 
-  // 4. Grind (RPE 9-10)
-  // Logic: Keep weight same next session to consolidate strength
+    // PR Logic: Check if bestWeight > max of all PREVIOUS dates
+    const prevHistory = (fullHistory[exId] as HistoryLog[]) || [];
+    const historicalLogs = prevHistory.filter(h => h.date !== today);
+    const historicalBest = historicalLogs.reduce((max, h) => h.weight > max ? h.weight : max, 0);
+
+    const isPR = !isCardio && bestWeight > historicalBest && historicalBest > 0;
+
+    exercisesSummary.push({
+        name: exerciseName,
+        sets: logs.length,
+        bestWeight,
+        isPR,
+        isCardio
+    });
+  });
+
+  const quotes = [
+      "Light weight, baby!",
+      "Yeah buddy!",
+      "Ain't nothing but a peanut.",
+      "Go hard or go home.",
+      "Pain is weakness leaving the body.",
+      "Discipline equals freedom.",
+      "One more rep.",
+      "The only bad workout is the one that didn't happen."
+  ];
+
   return {
-      type: 'MAINTAIN',
-      targetWeight: topSet.weight,
-      targetReps: exercise.reps,
-      reason: `RPE ${rpe} (Grind). Maintain weight to consolidate strength.`
+      date: dateStr,
+      duration: durationStr,
+      totalVolume: Math.round(totalVolume),
+      exercises: exercisesSummary,
+      quote: quotes[Math.floor(Math.random() * quotes.length)]
   };
 };
 
-export const analyzeSetPerformance = (exercise: Exercise, weight: number, reps: number): string => {
-  const { min, max } = parseRepRange(exercise.reps);
-  
-  if (reps > max + 2) return "Too light! Increase weight by 5kg next set.";
-  if (reps < min - 2) return "Too heavy. Drop weight by 10% next set.";
-  if (reps >= min && reps <= max) return "Perfect weight. Keep grinding.";
-  return "Good set. Adjust if needed.";
+export const getProgressionRecommendation = (exercise: Exercise): CoachRecommendation => {
+    const history = getExerciseHistory(exercise.id);
+    
+    if (!history || !history.lastSession) {
+        return {
+            type: 'BASELINE',
+            targetWeight: 0,
+            targetReps: exercise.reps,
+            reason: "Establish baseline."
+        };
+    }
+
+    const lastTop = history.lastSession.topSet;
+    const repMatch = exercise.reps.match(/(\d+)/);
+    const targetRepsInt = repMatch ? parseInt(repMatch[0]) : 10;
+
+    if (lastTop.rpe && lastTop.rpe <= 7) {
+        return {
+            type: 'INCREASE',
+            targetWeight: lastTop.weight + 2.5,
+            targetReps: exercise.reps,
+            reason: `Last session was RPE ${lastTop.rpe} (Easy). Time to add weight.`
+        };
+    }
+
+    if (lastTop.reps >= targetRepsInt + 2) {
+         return {
+            type: 'INCREASE',
+            targetWeight: lastTop.weight + 2.5,
+            targetReps: exercise.reps,
+            reason: `You exceeded the rep target (${lastTop.reps} vs ${targetRepsInt}). Level up.`
+        };
+    }
+
+    if ((lastTop.rpe && lastTop.rpe >= 9.5 && lastTop.reps < targetRepsInt) || lastTop.reps < targetRepsInt - 2) {
+        return {
+            type: 'DECREASE', 
+            targetWeight: Math.max(0, lastTop.weight - 2.5),
+            targetReps: exercise.reps,
+            reason: "Hit failure early last time. Pull back slightly to recover form."
+        };
+    }
+
+    return {
+        type: 'MAINTAIN',
+        targetWeight: lastTop.weight,
+        targetReps: exercise.reps,
+        reason: "Good intensity. Consolidate gains at this weight."
+    };
 };
 
-// --- RECEIPT & PR GENERATOR ---
-
-export interface ReceiptData {
-    duration: string;
-    totalVolume: number;
-    exercises: {
-        name: string;
-        sets: number;
-        bestWeight: number;
-        isPR: boolean;
-        isCardio: boolean;
-    }[];
-    date: string;
-    quote: string;
-}
-
-const MOTIVATIONAL_QUOTES = [
-    "PAIN IS TEMPORARY.",
-    "LIGHT WEIGHT BABY!",
-    "BUILD THE MONUMENT.",
-    "DISCIPLINE > MOTIVATION",
-    "THE IRON NEVER LIES.",
-    "EARNED. NOT GIVEN.",
-    "ONE MORE REP.",
-    "SACRIFICE FOR GLORY.",
-    "CONQUER YOURSELF.",
-    "NO SHORTCUTS."
-];
-
-export const getSessionSummary = (session: SessionData): ReceiptData => {
-    const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
-    const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
+export const analyzeSetPerformance = (exercise: Exercise, weight: number, reps: number): string => {
+    const repMatch = exercise.reps.match(/(\d+)/);
+    const targetRepsInt = repMatch ? parseInt(repMatch[0]) : 10;
     
-    // Calculate Duration
-    const durationMs = Date.now() - session.startTime;
-    const minutes = Math.floor(durationMs / 60000);
-    const durationStr = `${Math.floor(minutes/60)}h ${minutes%60}m`;
+    if (reps >= targetRepsInt + 4) return "Way too light! Add weight immediately.";
+    if (reps >= targetRepsInt + 2) return "Strong! You can handle more weight.";
+    if (reps >= targetRepsInt) return "Target hit. Good job.";
+    if (reps < targetRepsInt - 3) return "Struggling? Rest longer or drop weight.";
     
-    let totalVolume = 0;
-    const exerciseSummaries = [];
-    const today = getTodayString();
-    
-    // Process Exercises
-    for (const exId of Object.keys(session.completedExercises)) {
-        const sets = session.completedExercises[exId];
-        if (sets.length === 0) continue;
-        
-        // Find Exercise Name
-        let name = "Unknown Exercise";
-        let isCardio = false;
-        let isWarmup = false;
-        
-        // Check standard
-        let exDef = ALL_EXERCISES.find(e => e.id === exId);
-        // Check custom
-        if (!exDef) exDef = session.customExercises.find(e => e.id === exId);
-        
-        if (exDef) {
-            name = exDef.name;
-            isCardio = exDef.type === 'cardio';
-            isWarmup = !!exDef.isWarmup;
-        }
-
-        // FILTER: Skip warmups in receipt
-        if (isWarmup) continue;
-
-        // Calculate Session Best & Volume
-        let sessionBestWeight = 0;
-        
-        sets.forEach(s => {
-            if (!isCardio) {
-                totalVolume += s.weight * s.reps;
-                if (s.weight > sessionBestWeight) sessionBestWeight = s.weight;
-            } else {
-                 // Cardio volume is distance
-                 totalVolume += s.weight; 
-                 if (s.weight > sessionBestWeight) sessionBestWeight = s.weight;
-            }
-        });
-        
-        // Check for PR (History vs Session)
-        const logs = fullHistory[exId] as HistoryLog[] || [];
-        const previousLogs = logs.filter(l => l.date !== today);
-        
-        let previousMax = 0;
-        previousLogs.forEach(l => {
-            if (l.weight > previousMax) previousMax = l.weight;
-        });
-        
-        // If session best > previous max, it is a TRUE PR.
-        const isPR = sessionBestWeight > previousMax && previousMax > 0;
-        
-        exerciseSummaries.push({
-            name,
-            sets: sets.length,
-            bestWeight: sessionBestWeight,
-            isPR,
-            isCardio
-        });
-    }
-    
-    return {
-        duration: durationStr,
-        totalVolume: Math.round(totalVolume),
-        exercises: exerciseSummaries,
-        date: new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(),
-        quote: MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]
-    };
+    return "Solid effort.";
 };

@@ -1,4 +1,5 @@
 
+
 import { WorkoutDay, Exercise, PacerConfig } from './types';
 
 // --- PACER TEMPLATES ---
@@ -90,9 +91,108 @@ const PACER_CHOP: PacerConfig = {
 
 export const DEFAULT_PACER_STOPWATCH = PACER_STOPWATCH;
 
-// --- DATA ---
+// --- EXERCISES & ROUTINES ---
+
+// 1. Post-Workout Cardio
+const INCINERATOR_PROTOCOL: Exercise = {
+  id: 'pw_incinerator', name: '10-Minute Incinerator', type: 'cardio', sets: 1, reps: '10 mins', restSeconds: 0,
+  cues: 'Incline MAX. No holding rails. Pump arms.',
+  setup: 'Treadmill.',
+  visualize: 'Climbing a steep mountain.',
+  action: 'Walk at max incline. Do not hold on.',
+  muscleFocus: 'Cardio/Calves', targetGroup: 'Cardio', feeling: 'Lungs burning, calves tight.',
+  metValue: 9.0, muscleSplit: { 'Calves': 40, 'Glutes': 30, 'Hamstrings': 20, 'Core': 10 },
+  motionType: 'cardio', isCompound: true, pacer: DEFAULT_PACER_STOPWATCH,
+  detailedSteps: [
+    "Min 0-2: Speed 4 km/h, Incline 0 (Warm up).",
+    "Min 2-9: Set Incline to MAX (12 or 15). Speed 4.5 - 5 km/h.",
+    "Do NOT hold the handrails! (Holding rails reduces burn by 30%). Pump your arms.",
+    "Min 9-10: Cooldown (Flat)."
+  ],
+  alternatives: [
+    {
+       id: 'pw_farmers', name: "Farmer's Carry (Floor)", type: 'cardio', sets: 1, reps: '5 mins', restSeconds: 0,
+       cues: 'Heavy weights. Chest up. Walk non-stop.',
+       setup: 'Two heavy dumbbells/kettlebells.',
+       visualize: 'Carrying groceries in one trip.',
+       action: 'Walk around gym floor. If grip fails, put down, shake, pick up immediately.',
+       muscleFocus: 'Traps/Forearms', targetGroup: 'Cardio', feeling: 'Forearms burning.',
+       metValue: 8.0, muscleSplit: { 'Traps': 40, 'Forearms': 40, 'Core': 20 },
+       motionType: 'cardio', isCompound: true, pacer: DEFAULT_PACER_STOPWATCH,
+       swapLabel: 'NO TREADMILL',
+       detailedSteps: [
+         "Grab two heavy kettlebells or dumbbells.",
+         "Keep your chest up and shoulders back.",
+         "Walk continuously for 5 minutes around the gym floor.",
+         "Turn corners carefully."
+       ]
+    }
+  ]
+};
+
+// 2. Stretches
+const STRETCH_PEC: Exercise = {
+  id: 'str_pec', name: 'Doorway Pec Stretch', type: 'weighted', sets: 1, reps: '30s each', restSeconds: 0,
+  cues: 'Forearm on frame. Step through.',
+  setup: 'Doorway or rack.',
+  visualize: 'Ripping chest open.',
+  action: 'Lean forward until deep stretch in pec.',
+  muscleFocus: 'Chest', targetGroup: 'Warmup', feeling: 'Release in front delt/pec.',
+  metValue: 1.5, muscleSplit: {'Chest': 100}, motionType: 'hold', isTimed: true, pacer: DEFAULT_PACER_STOPWATCH,
+  detailedSteps: ["Find a doorway/rack.", "Put forearm against the frame at 90°.", "Step through until you feel your chest ripping open.", "Hold 30s each side."]
+};
+
+const STRETCH_HANG: Exercise = {
+  id: 'str_hang', name: 'Dead Hang', type: 'weighted', sets: 1, reps: '45s', restSeconds: 0,
+  cues: 'Relax completely. Let spine decompress.',
+  setup: 'Pull-up bar.',
+  visualize: 'Spine elongating.',
+  action: 'Hang limp. Breathe deep into belly.',
+  muscleFocus: 'Spine', targetGroup: 'Warmup', feeling: 'Spinal relief.',
+  metValue: 1.5, muscleSplit: {'Lats': 50, 'Spine': 50}, motionType: 'hold', isTimed: true, pacer: DEFAULT_PACER_STOPWATCH,
+  detailedSteps: ["Hang from the pull-up bar.", "Let your body go completely limp.", "Feel your spine popping and decompressing.", "Hold 30-45s."]
+};
+
+const STRETCH_COUCH: Exercise = {
+  id: 'str_couch', name: 'Couch Stretch / Lunge', type: 'weighted', sets: 1, reps: '30s each', restSeconds: 0,
+  cues: 'Squeeze glute. Push hip forward.',
+  setup: 'Kneel on floor/mat.',
+  visualize: 'Opening the front of the hip.',
+  action: 'Lunge position. Posterior pelvic tilt (tuck tailbone).',
+  muscleFocus: 'Hip Flexors', targetGroup: 'Warmup', feeling: 'Deep pull in front of hip.',
+  metValue: 1.5, muscleSplit: {'Hip Flexors': 100}, motionType: 'hold', isTimed: true, pacer: DEFAULT_PACER_STOPWATCH,
+  detailedSteps: ["Kneel on floor. Put one foot forward (Lunge).", "Squeeze your glute and push hips forward.", "Crucial because sitting at a desk tightens hips.", "Hold 30s."]
+};
+
+const STRETCH_NECK: Exercise = {
+  id: 'str_neck', name: 'Neck Release', type: 'weighted', sets: 1, reps: '30s', restSeconds: 0,
+  cues: 'Gentle pull. Ear to shoulder.',
+  setup: 'Standing or sitting.',
+  visualize: 'Releasing desk tension.',
+  action: 'Tilt head side to side. Keep shoulders down.',
+  muscleFocus: 'Traps/Neck', targetGroup: 'Warmup', feeling: 'Relief in neck.',
+  metValue: 1.0, muscleSplit: {'Traps': 100}, motionType: 'hold', isTimed: true, pacer: DEFAULT_PACER_STOPWATCH,
+  detailedSteps: ["Gently pull your head to the side (Ear to Shoulder).", "Keep the opposite shoulder down.", "Hold for 30s, switch sides."]
+};
 
 const WARMUP_EXERCISES: Exercise[] = [
+  { 
+    id: 'wu_bag_flow', name: 'Light Bag Flow (Low Power)', type: 'cardio', sets: 1, reps: '2 mins', restSeconds: 30,
+    cues: 'Tap the bag. Move feet. Rhythm over power.',
+    setup: 'Stand in front of heavy bag.',
+    visualize: 'Dancing with the bag.',
+    action: 'Light punches, footwork, head movement. Do NOT hit hard.',
+    muscleFocus: 'Full Body', targetGroup: 'Warmup', feeling: 'Loose and warm.', isWarmup: true,
+    pacer: PACER_FAST, metValue: 6.0, muscleSplit: { 'Shoulders': 30, 'Legs': 40, 'Core': 30 },
+    motionType: 'cardio', isCompound: true,
+    detailedSteps: [
+      "Stand in a fighting stance.",
+      "Move around the bag lightly.",
+      "Throw light jabs and crosses (50% power).",
+      "Focus on snapping your punches and moving your head.",
+      "Keep breathing rhythmic."
+    ]
+  },
   { 
     id: 'wu_1', name: 'Arm Circles', type: 'weighted', sets: 1, reps: '20', restSeconds: 0, 
     cues: 'Big circles to loosen up shoulders.', 
@@ -213,23 +313,6 @@ const WARMUP_EXERCISES: Exercise[] = [
         "Clear the bar with your chin.",
         "Lower yourself slowly back to a full hang.",
         "Avoid swinging or kicking your legs."
-    ]
-  },
-  { 
-    id: 'wu_punching', name: 'Shadow Boxing', type: 'cardio', sets: 1, reps: '2 mins', restSeconds: 30, 
-    cues: 'Keep moving on toes. Snap punches.', 
-    setup: 'Staggered stance. Hands up.', 
-    visualize: 'Fighting an opponent.', 
-    action: 'Throw 1-2 combos (Jab, Cross). Move head.',
-    muscleFocus: 'Full Body', targetGroup: 'Warmup', feeling: 'Elevated heart rate', isWarmup: true, pacer: PACER_FAST, metValue: 8.0, muscleSplit: { 'Shoulders': 40, 'Core': 30, 'Legs': 30 }, motionType: 'cardio', isCompound: true,
-    detailedSteps: [
-        "Stand with one foot forward, knees slightly bent.",
-        "Keep your hands up protecting your face.",
-        "Bounce lightly on the balls of your feet.",
-        "Throw straight punches (Jabs and Crosses).",
-        "Focus on snapping your punches fully out and back.",
-        "Rotate your hips with each punch for power.",
-        "Keep moving constantly for the full duration to get your heart rate up."
     ]
   },
 ];
@@ -406,6 +489,10 @@ export const PUSH_A_DAY: WorkoutDay = {
           }
       ]
     },
+    // POST WORKOUT
+    INCINERATOR_PROTOCOL,
+    STRETCH_PEC,
+    STRETCH_NECK
   ]
 };
 
@@ -556,6 +643,10 @@ export const PULL_A_DAY: WorkoutDay = {
           }
       ]
     },
+    // POST WORKOUT
+    INCINERATOR_PROTOCOL,
+    STRETCH_HANG,
+    STRETCH_NECK
   ]
 };
 
@@ -659,7 +750,11 @@ export const LEGS_POWER_DAY: WorkoutDay = {
           "Keep your arms relatively straight (slight bend is okay).",
           "Return slowly to the start position, resisting the pull."
       ]
-    }
+    },
+    // POST WORKOUT
+    INCINERATOR_PROTOCOL,
+    STRETCH_COUCH,
+    STRETCH_NECK
   ]
 };
 
@@ -760,6 +855,10 @@ export const PUSH_B_DAY: WorkoutDay = {
           "Keep the movement controlled; do not let the weights slam."
       ] 
     },
+    // POST WORKOUT
+    INCINERATOR_PROTOCOL,
+    STRETCH_PEC,
+    STRETCH_NECK
   ]
 };
 
@@ -902,6 +1001,10 @@ export const PULL_B_DAY: WorkoutDay = {
           "Keep constant tension on the cable."
       ] 
     },
+    // POST WORKOUT
+    INCINERATOR_PROTOCOL,
+    STRETCH_HANG,
+    STRETCH_NECK
   ]
 };
 
@@ -998,7 +1101,11 @@ export const LEGS_HYPERTROPHY_DAY: WorkoutDay = {
           "Pull your elbows towards your toes to create tension in your core.",
           "Hold and breathe rhythmically."
       ]
-    }
+    },
+    // POST WORKOUT
+    INCINERATOR_PROTOCOL,
+    STRETCH_COUCH,
+    STRETCH_NECK
   ]
 };
 

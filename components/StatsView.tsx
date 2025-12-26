@@ -1,7 +1,9 @@
+
+
 import React, { useEffect, useState } from 'react';
 import { DashboardStats } from '../types';
 import { getDashboardStats } from '../services/storageService';
-import { ArrowLeft, AlertTriangle, Medal, BarChart3 } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Medal, BarChart3, Utensils, Flame } from 'lucide-react';
 
 interface Props {
   onBack: () => void;
@@ -25,6 +27,8 @@ const StatsView: React.FC<Props> = ({ onBack }) => {
 
   // Explicitly type the records to handle 'unknown' type inference from Object.values
   const records = Object.values(stats.personalRecords) as Array<{ weight: number; exerciseName: string; date: string }>;
+
+  const netCalories = stats.totalCaloriesIn - stats.totalCaloriesBurned;
 
   return (
     <div className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto animate-in slide-in-from-right">
@@ -53,6 +57,47 @@ const StatsView: React.FC<Props> = ({ onBack }) => {
           </div>
         </div>
       )}
+
+      {/* NUTRITION REPORT */}
+      <div className="mb-8">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Utensils size={18} className="text-green-400" /> Nutrition Report (Week)
+          </h3>
+          <div className="bg-gym-800 border border-gym-700 rounded-xl p-4 mb-4">
+              <div className="flex justify-between items-center mb-4">
+                  <div>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">In</p>
+                      <p className="text-xl font-mono text-green-400 font-bold">{stats.totalCaloriesIn}</p>
+                  </div>
+                  <div>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold text-right">Out (Active)</p>
+                      <p className="text-xl font-mono text-orange-400 font-bold text-right">{stats.totalCaloriesBurned}</p>
+                  </div>
+              </div>
+              <div className="w-full h-2 bg-gym-900 rounded-full overflow-hidden flex">
+                  <div className="h-full bg-green-500" style={{ width: `${Math.min(100, (stats.totalCaloriesIn / (stats.totalCaloriesIn + stats.totalCaloriesBurned || 1)) * 100)}%` }}></div>
+                  <div className="h-full bg-orange-500" style={{ width: `${Math.min(100, (stats.totalCaloriesBurned / (stats.totalCaloriesIn + stats.totalCaloriesBurned || 1)) * 100)}%` }}></div>
+              </div>
+              <div className="mt-2 text-center">
+                  <p className="text-xs text-gray-400">Net Active Balance: <span className={`font-bold ${netCalories > 0 ? 'text-green-400' : 'text-orange-400'}`}>{netCalories > 0 ? '+' : ''}{netCalories}</span></p>
+              </div>
+          </div>
+
+          {stats.nutritionLogs.length > 0 && (
+              <div className="space-y-2">
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">Recent Meals</p>
+                  {stats.nutritionLogs.slice(0, 5).map((log, i) => (
+                      <div key={i} className="flex justify-between items-center p-2 bg-gym-800/50 rounded border border-gym-700/50">
+                          <div>
+                              <p className="text-xs font-bold text-white">{log.name}</p>
+                              <p className="text-[9px] text-gray-500">{new Date(log.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                          </div>
+                          <p className="text-sm font-mono text-green-400 font-bold">+{log.calories}</p>
+                      </div>
+                  ))}
+              </div>
+          )}
+      </div>
 
       {/* Muscle Heatmap */}
       <div className="mb-8">

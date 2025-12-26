@@ -1,8 +1,9 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
-import { SessionData, UserStats, DAYS_OF_WEEK, Exercise, UserProfile } from './types';
-import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, checkAndMigrateLegacyData, getCurrentUser, switchUser, exportUserData, importUserData } from './services/storageService';
+import { SessionData, UserStats, DAYS_OF_WEEK, Exercise, UserProfile, TempoRating } from './types';
+import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, checkAndMigrateLegacyData, getCurrentUser, switchUser, exportUserData, importUserData, logNutrition } from './services/storageService';
 import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
@@ -11,7 +12,7 @@ import BodyHeatmap from './components/BodyHeatmap';
 import WorkoutReceipt from './components/WorkoutReceipt';
 import LoginScreen from './components/LoginScreen';
 import HelpView from './components/HelpView';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle } from 'lucide-react';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle, Utensils, Plus, X } from 'lucide-react';
 
 const App: React.FC = () => {
   // User Management State
@@ -24,7 +25,8 @@ const App: React.FC = () => {
   
   // Dashboard Data
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
-  const [weeklyCalories, setWeeklyCalories] = useState(0);
+  const [weeklyBurned, setWeeklyBurned] = useState(0);
+  const [weeklyIn, setWeeklyIn] = useState(0);
   // UPDATED TYPE: now stores object with hours and volume
   const [heatmapData, setHeatmapData] = useState<Record<string, { hours: number; volume: number }>>({});
   
@@ -33,6 +35,11 @@ const App: React.FC = () => {
   const [showWorkoutSelector, setShowWorkoutSelector] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   
+  // Nutrition Input State
+  const [showNutritionModal, setShowNutritionModal] = useState(false);
+  const [foodCals, setFoodCals] = useState('');
+  const [foodName, setFoodName] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- INITIALIZATION ---
@@ -67,7 +74,8 @@ const App: React.FC = () => {
   const refreshDashboard = () => {
     const stats = getDashboardStats();
     setBestLift(stats.bestLift);
-    setWeeklyCalories(stats.totalCalories);
+    setWeeklyBurned(stats.totalCaloriesBurned);
+    setWeeklyIn(stats.totalCaloriesIn);
     setHeatmapData(getMuscleHeatmapData());
   };
 
@@ -127,6 +135,16 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLogNutrition = () => {
+      const cals = parseInt(foodCals);
+      if (!cals) return;
+      logNutrition(cals, foodName);
+      setFoodCals('');
+      setFoodName('');
+      setShowNutritionModal(false);
+      refreshDashboard();
+  };
+
   // Determine active plan
   const getActivePlan = () => {
     if (currentSession && !currentSession.isFinished && currentSession.workoutId) {
@@ -174,7 +192,7 @@ const App: React.FC = () => {
     setCurrentSession({ ...currentSession, swaps: newSwaps });
   };
 
-  const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false, rpe?: number) => {
+  const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false, rpe?: number, tempoRating?: TempoRating) => {
     if (!currentSession || !currentSession.activeExerciseId || !activePlan) return;
     
     const exerciseId = currentSession.activeExerciseId;
@@ -196,11 +214,11 @@ const App: React.FC = () => {
     
     const setNumber = updatedCompleted[exerciseId].length + 1;
     updatedCompleted[exerciseId].push({
-      weight: metric1, reps: metric2, rpe, completed: true,
+      weight: metric1, reps: metric2, rpe, tempoRating, completed: true,
       timestamp: Date.now(), isDropSet, isMonsterSet, calories
     });
 
-    saveExerciseLog(exerciseId, metric1, metric2, setNumber, rpe);
+    saveExerciseLog(exerciseId, metric1, metric2, setNumber, rpe, tempoRating);
 
     const skipTimer = isDropSet || isMonsterSet;
     let newTimer = null;
@@ -392,7 +410,55 @@ const App: React.FC = () => {
 
   // --- RENDER: DASHBOARD (HOME) ---
   return (
-    <div className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto font-sans flex flex-col">
+    <div className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto font-sans flex flex-col relative">
+      
+      {/* NUTRITION MODAL */}
+      {showNutritionModal && (
+          <div className="fixed inset-0 z-[80] bg-gym-900/95 backdrop-blur flex flex-col items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-gym-800 w-full rounded-2xl border border-gym-700 p-6 relative shadow-2xl">
+                  <button onClick={() => setShowNutritionModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+                      <X size={24} />
+                  </button>
+                  
+                  <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-2">
+                      <Utensils className="text-gym-accent" /> Log Meal
+                  </h3>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">Estimated Calories</label>
+                          <input 
+                            type="number" 
+                            autoFocus
+                            placeholder="e.g. 500" 
+                            value={foodCals}
+                            onChange={(e) => setFoodCals(e.target.value)}
+                            className="w-full bg-gym-900 border border-gym-600 rounded-xl p-4 text-3xl text-white font-bold text-center focus:border-gym-accent focus:outline-none"
+                          />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">Food Name (Optional)</label>
+                          <input 
+                            type="text" 
+                            placeholder="e.g. Chicken Rice" 
+                            value={foodName}
+                            onChange={(e) => setFoodName(e.target.value)}
+                            className="w-full bg-gym-900 border border-gym-600 rounded-xl p-3 text-white text-center focus:border-gym-accent focus:outline-none"
+                          />
+                      </div>
+                      
+                      <button 
+                        onClick={handleLogNutrition}
+                        disabled={!foodCals}
+                        className="w-full py-4 bg-gym-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg mt-4 flex items-center justify-center gap-2"
+                      >
+                          <Plus size={20} /> Add to Log
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <header className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-black tracking-tighter text-white italic">IRON<span className="text-gym-accent">GUIDE</span></h1>
@@ -411,9 +477,24 @@ const App: React.FC = () => {
            <div className="flex items-center gap-2 mb-2"><Trophy size={14} className="text-yellow-500" /><p className="text-[10px] text-gray-400 uppercase font-bold">Best Lift</p></div>
            {bestLift ? (<div><p className="text-sm font-bold text-white truncate">{bestLift.exerciseName}</p><p className="text-lg font-black text-gym-accent italic">{bestLift.weight}kg</p></div>) : (<p className="text-xs text-gray-500 italic">No logs yet</p>)}
         </div>
-        <div className="bg-gym-800/30 rounded-lg p-3 border border-gym-700">
-           <div className="flex items-center gap-2 mb-2"><Flame size={14} className="text-orange-500" /><p className="text-[10px] text-gray-400 uppercase font-bold">Week Burn</p></div>
-           <div><p className="text-sm font-bold text-white">Total Energy</p><p className="text-lg font-black text-orange-400 italic">{weeklyCalories} kcal</p></div>
+        
+        {/* ENERGY BALANCE CARD */}
+        <div className="bg-gym-800/30 rounded-lg p-3 border border-gym-700 relative overflow-hidden group">
+           <div className="flex items-center justify-between mb-1 relative z-10">
+               <div className="flex items-center gap-2"><Flame size={14} className="text-orange-500" /><p className="text-[10px] text-gray-400 uppercase font-bold">Energy Balance</p></div>
+               <button onClick={() => setShowNutritionModal(true)} className="p-1 bg-gym-800 rounded text-gym-accent hover:bg-gym-700 transition-colors"><Plus size={12} /></button>
+           </div>
+           <div className="relative z-10 flex justify-between items-end">
+               <div>
+                   <p className="text-[9px] text-orange-400 uppercase">Burned</p>
+                   <p className="text-sm font-black text-white">{weeklyBurned}</p>
+               </div>
+               <div className="h-6 w-px bg-gym-700"></div>
+               <div className="text-right">
+                   <p className="text-[9px] text-green-400 uppercase">Intake</p>
+                   <p className="text-sm font-black text-white">{weeklyIn}</p>
+               </div>
+           </div>
         </div>
       </div>
 

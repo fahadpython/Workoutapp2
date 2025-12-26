@@ -1,8 +1,9 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation } from '../types';
+import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation, TempoRating } from '../types';
 import { getExerciseHistory, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau, saveExerciseNote, getExerciseNote, wasSkippedLastSession, saveSkippedExercise } from '../services/storageService';
-import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff, AlertCircle, Film, ExternalLink } from 'lucide-react';
+import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff, AlertCircle, Film, ExternalLink, RefreshCw, BarChart2 } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
 import MotionTracker from './MotionTracker';
@@ -11,7 +12,7 @@ import WaterReminder from './WaterReminder';
 interface Props {
   exercise: Exercise;
   completedSets: SetLog[];
-  onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean, rpe?: number) => void;
+  onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean, rpe?: number, tempoRating?: TempoRating) => void;
   onBack: () => void;
   onUpdateWater: (amount: number) => void;
 }
@@ -492,6 +493,7 @@ const ExerciseCard: React.FC<Props> = ({
   const [metric1, setMetric1] = useState<string>(''); // Weight or Distance
   const [metric2, setMetric2] = useState<string>(''); // Reps or Time
   const [rpe, setRpe] = useState<number>(8); // Default RPE
+  const [tempoRating, setTempoRating] = useState<TempoRating>('PERFECT'); // NEW: Tempo Rating
   const [setMode, setSetMode] = useState<0 | 1 | 2>(0);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -510,6 +512,9 @@ const ExerciseCard: React.FC<Props> = ({
   const [showPenaltyPrompt, setShowPenaltyPrompt] = useState(false);
   const [skippedAlert, setSkippedAlert] = useState(false);
   
+  // Penalty / Volume Check State
+  const [penaltyData, setPenaltyData] = useState<{ type: string; message: string; prescription: string } | null>(null);
+
   // Hydration State
   const [waterDebt, setWaterDebt] = useState(0);
   const [showWaterReminder, setShowWaterReminder] = useState(false);
@@ -581,45 +586,55 @@ const ExerciseCard: React.FC<Props> = ({
       return Math.round(loss);
   };
 
-  const checkPenaltyCondition = (m1: number, m2: number) => {
-      // Logic: If it's the LAST scheduled set, and performance is below target
-      if (exercise.isWarmup || isCardio) return false;
-      if (completedSets.length !== exercise.sets - 1) return false; // Only trigger on final set (before logging it)
+  const checkPenaltyCondition = (m1: number, m2: number, currentRpe: number): { type: string; message: string; prescription: string } | null => {
+      if (exercise.isWarmup || isCardio) return null;
+      if (completedSets.length !== exercise.sets - 1) return null; // Only trigger on final set (before logging it)
       
       let targetWeight = recommendation?.targetWeight || (history?.lastSession?.topSet.weight || 0);
+      // Fallback if no target weight (new exercise), try to infer from first set or just use current as baseline
+      if (targetWeight === 0 && completedSets.length > 0) targetWeight = completedSets[0].weight;
+      
       let targetReps = getTargetRepsInt();
       
-      if (m1 < targetWeight * 0.9 || m2 < targetReps - 2) {
-          return true;
+      // Rule 1: The "Sandbagging" Check (Laziness)
+      // actualReps < (targetReps - 2) AND actualRPE < 8
+      if (m2 < (targetReps - 2) && currentRpe < 8) {
+          return {
+              type: "LAZINESS_PENALTY",
+              message: "Intensity Too Low. You stopped with fuel in the tank.",
+              prescription: "Perform 1 'Makeup Set' with the SAME weight to failure."
+          };
       }
-      return false;
+
+      // Rule 2: The "Fatigue" Check (Genuine Failure)
+      // actualReps < (targetReps - 2) AND actualRPE >= 9
+      if (m2 < (targetReps - 2) && currentRpe >= 9) {
+          return {
+              type: "DROP_SET_FIX",
+              message: "Target missed due to fatigue. Let's get volume safely.",
+              prescription: "Drop Weight by 20% and perform 1 AMRAP set (As Many Reps As Possible)."
+          };
+      }
+
+      // Rule 3: The "Intensity Drop" Check (Lowered Weight)
+      // actualWeight < (targetWeight * 0.9)
+      if (targetWeight > 0 && m1 < (targetWeight * 0.9)) {
+          // Calculate RequiredReps = targetReps * (targetWeight / actualWeight)
+          const requiredReps = Math.ceil(targetReps * (targetWeight / Math.max(1, m1)));
+          
+          if (m2 < requiredReps) {
+              return {
+                  type: "COMPENSATION_SET",
+                  message: "Weight drop detected. You didn't do enough reps to compensate.",
+                  prescription: "Perform 1 extra set of this weight to failure."
+              };
+          }
+      }
+
+      return null;
   };
 
-  const confirmPenaltySet = () => {
-      // Add logic to just close modal and let user continue working out (essentially adding a set)
-      setShowPenaltyPrompt(false);
-      // We don't need to do anything else, the user hasn't logged the set yet or we can log it and keep card open.
-      // Actually, log the current set, but don't close the card even if set count reached.
-      // Just showing a toast "Penalty Set Added"
-      setCoachFeedback("Penalty Set Unlocked. Do one more!");
-      setTimeout(() => setCoachFeedback(null), 3000);
-  };
-
-  const handleFinishSet = () => {
-    let m1 = parseFloat(metric1) || 0;
-    let m2 = parseFloat(metric2) || 0;
-    
-    if (exercise.isWarmup) {
-        m1 = 0; 
-        m2 = getTargetRepsInt(); 
-    }
-
-    // --- PENALTY CHECK INTERCEPT ---
-    if (checkPenaltyCondition(m1, m2) && !showPenaltyPrompt) {
-        setShowPenaltyPrompt(true);
-        return; // Stop here, wait for user input
-    }
-
+  const commitSet = (m1: number, m2: number) => {
     // --- 1RM SESSION TRACKING ---
     if (!isCardio && !exercise.isWarmup && m1 > 0 && m2 > 0) {
         // Epley Formula: w * (1 + r/30)
@@ -660,7 +675,8 @@ const ExerciseCard: React.FC<Props> = ({
     const isDrop = setMode === 1;
     const isMonster = setMode === 2;
 
-    onLogSet(m1, m2, isDrop, isMonster, rpe); 
+    // Pass tempoRating to log handler
+    onLogSet(m1, m2, isDrop, isMonster, rpe, tempoRating); 
     setShowMotionTracker(false);
     
     if (!exercise.isWarmup && !isCardio) {
@@ -683,6 +699,51 @@ const ExerciseCard: React.FC<Props> = ({
     } else {
         setSetMode(0); 
     }
+    
+    // Reset defaults for next set
+    setTempoRating('PERFECT');
+  };
+
+  const confirmPenaltySet = () => {
+      // 1. Log the current "failed" set
+      let m1 = parseFloat(metric1) || 0;
+      let m2 = parseFloat(metric2) || 0;
+      if (exercise.isWarmup) { m1=0; m2=getTargetRepsInt(); }
+      
+      commitSet(m1, m2);
+
+      // 2. Set up for the bonus set based on prescription
+      setShowPenaltyPrompt(false);
+      setCoachFeedback(penaltyData?.message || "Bonus Set Unlocked");
+      setTimeout(() => setCoachFeedback(null), 4000);
+
+      // Rule 2 Prescription: Drop weight logic
+      if (penaltyData?.type === 'DROP_SET_FIX') {
+          const newWeight = Math.round((m1 * 0.8) / 1.25) * 1.25;
+          setMetric1(newWeight.toString());
+          setMetric2(""); // AMRAP usually means unknown target
+      }
+      // Rule 1 & 3 usually keep same weight
+  };
+
+  const handleFinishSet = () => {
+    let m1 = parseFloat(metric1) || 0;
+    let m2 = parseFloat(metric2) || 0;
+    
+    if (exercise.isWarmup) {
+        m1 = 0; 
+        m2 = getTargetRepsInt(); 
+    }
+
+    // --- PENALTY CHECK INTERCEPT ---
+    const penalty = checkPenaltyCondition(m1, m2, rpe);
+    if (penalty && !showPenaltyPrompt) {
+        setPenaltyData(penalty);
+        setShowPenaltyPrompt(true);
+        return; // Stop here, wait for user input
+    }
+
+    commitSet(m1, m2);
   };
 
   const handleSaveNote = () => {
@@ -810,28 +871,33 @@ const ExerciseCard: React.FC<Props> = ({
           />
       )}
 
-      {/* --- PENALTY SET MODAL --- */}
+      {/* --- VOLUME CHECK / STIMULUS TOP-UP MODAL --- */}
       {showPenaltyPrompt && (
           <div className="fixed inset-0 z-[75] bg-gym-900/95 flex flex-col items-center justify-center p-6 animate-in fade-in">
-              <div className="bg-orange-500/20 p-6 rounded-full mb-6 border-2 border-orange-500 animate-pulse">
-                  <AlertOctagon size={48} className="text-orange-400" />
+              <div className={`p-6 rounded-full mb-6 border-2 animate-pulse ${penaltyData?.type === 'LAZINESS_PENALTY' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-blue-500/20 border-blue-500 text-blue-400'}`}>
+                  {penaltyData?.type === 'LAZINESS_PENALTY' ? <AlertOctagon size={48} /> : <BarChart2 size={48} />}
               </div>
-              <h3 className="text-2xl font-black text-white mb-2 uppercase text-center">Performance Low</h3>
-              <p className="text-gray-300 mb-8 text-center">You missed your target numbers. To trigger growth, the algorithm requires one extra set.</p>
+              <h3 className="text-2xl font-black text-white mb-2 uppercase text-center tracking-wider">Stimulus Check</h3>
+              
+              <div className="bg-gym-800 p-4 rounded-xl border border-gym-700 w-full mb-6 text-center">
+                  <p className="text-lg font-bold text-white mb-1">{penaltyData?.message}</p>
+                  <div className="h-px bg-gym-700 w-full my-3"></div>
+                  <p className="text-[10px] uppercase font-bold text-gray-500 mb-1">Prescription</p>
+                  <p className="text-gym-accent font-bold text-lg leading-tight">{penaltyData?.prescription}</p>
+              </div>
               
               <button 
                   onClick={confirmPenaltySet}
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-orange-900/40 mb-4 flex items-center justify-center gap-2"
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-900/40 mb-4 flex items-center justify-center gap-2"
               >
                   <CheckCircle size={20} /> Unlock Bonus Set
               </button>
               
               <button 
                   onClick={() => {
-                      // Skip with reason logic could be here, but for now just proceed
                       setShowPenaltyPrompt(false);
-                      // Log the set anyway without bonus
-                      onLogSet(parseFloat(metric1)||0, parseFloat(metric2)||0, setMode===1, setMode===2, rpe);
+                      // Just log the set without bonus
+                      commitSet(parseFloat(metric1)||0, parseFloat(metric2)||0);
                   }}
                   className="text-gray-500 font-bold hover:text-white transition-colors"
               >
@@ -1190,37 +1256,69 @@ const ExerciseCard: React.FC<Props> = ({
                           </div>
                         </div>
 
-                        {/* RPE SLIDER */}
+                        {/* RPE & TEMPO SLIDERS */}
                         {!isCardio && (
-                            <div className="mb-4 relative z-10">
-                                <div className="flex justify-between items-end mb-2">
-                                    <label className="text-xs text-gray-400 font-bold uppercase flex items-center gap-1 cursor-pointer" onClick={() => setShowRpeInfo(!showRpeInfo)}>
-                                        <Gauge size={12}/> RPE (Effort) <HelpCircle size={10} className="text-gym-accent" />
-                                    </label>
-                                    <span className={`text-xs font-bold ${getRPEColor(rpe)}`}>
-                                        {rpe} / 10 - {getRPEDescription(rpe)}
-                                    </span>
-                                </div>
-                                {showRpeInfo && (
-                                    <div className="bg-gym-900/90 p-2 rounded border border-gym-700 text-[10px] text-gray-300 mb-2 animate-in fade-in">
-                                        <strong>RPE (Rate of Perceived Exertion)</strong>
-                                        <br/>10 = Failure (No reps left).
-                                        <br/>9 = 1 Rep in Reserve (Could do 1 more).
-                                        <br/>8 = 2 Reps in Reserve (Could do 2 more).
+                            <div className="mb-4 relative z-10 space-y-4">
+                                {/* RPE Control */}
+                                <div>
+                                    <div className="flex justify-between items-end mb-2">
+                                        <label className="text-xs text-gray-400 font-bold uppercase flex items-center gap-1 cursor-pointer" onClick={() => setShowRpeInfo(!showRpeInfo)}>
+                                            <Gauge size={12}/> RPE (Effort) <HelpCircle size={10} className="text-gym-accent" />
+                                        </label>
+                                        <span className={`text-xs font-bold ${getRPEColor(rpe)}`}>
+                                            {rpe} / 10 - {getRPEDescription(rpe)}
+                                        </span>
                                     </div>
-                                )}
-                                <input 
-                                    type="range" 
-                                    min="1" 
-                                    max="10" 
-                                    step="0.5"
-                                    value={rpe}
-                                    onChange={(e) => setRpe(parseFloat(e.target.value))}
-                                    className="w-full h-2 bg-gym-700 rounded-lg appearance-none cursor-pointer accent-gym-accent"
-                                />
-                                <div className="flex justify-between px-1 mt-1">
-                                    <span className="text-[9px] text-gray-600">Easy</span>
-                                    <span className="text-[9px] text-gray-600">Failure</span>
+                                    {showRpeInfo && (
+                                        <div className="bg-gym-900/90 p-2 rounded border border-gym-700 text-[10px] text-gray-300 mb-2 animate-in fade-in">
+                                            <strong>RPE (Rate of Perceived Exertion)</strong>
+                                            <br/>10 = Failure (No reps left).
+                                            <br/>9 = 1 Rep in Reserve (Could do 1 more).
+                                            <br/>8 = 2 Reps in Reserve (Could do 2 more).
+                                        </div>
+                                    )}
+                                    <input 
+                                        type="range" 
+                                        min="1" 
+                                        max="10" 
+                                        step="0.5"
+                                        value={rpe}
+                                        onChange={(e) => setRpe(parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gym-700 rounded-lg appearance-none cursor-pointer accent-gym-accent"
+                                    />
+                                    <div className="flex justify-between px-1 mt-1">
+                                        <span className="text-[9px] text-gray-600">Easy</span>
+                                        <span className="text-[9px] text-gray-600">Failure</span>
+                                    </div>
+                                </div>
+                                
+                                {/* TEMPO Quality Gate UI */}
+                                <div>
+                                     <div className="flex justify-between items-end mb-2">
+                                        <label className="text-xs text-gray-400 font-bold uppercase flex items-center gap-1">
+                                            <Activity size={12}/> Tempo Quality
+                                        </label>
+                                    </div>
+                                    <div className="flex bg-gym-900 rounded-lg p-1 border border-gym-700">
+                                        <button 
+                                            onClick={() => setTempoRating('PERFECT')}
+                                            className={`flex-1 py-2 rounded text-[10px] font-bold uppercase transition-all ${tempoRating === 'PERFECT' ? 'bg-gym-success text-white shadow' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            Perfect (3-1-1)
+                                        </button>
+                                        <button 
+                                            onClick={() => setTempoRating('FAST')}
+                                            className={`flex-1 py-2 rounded text-[10px] font-bold uppercase transition-all ${tempoRating === 'FAST' ? 'bg-yellow-500 text-white shadow' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            Fast
+                                        </button>
+                                        <button 
+                                            onClick={() => setTempoRating('CHEATED')}
+                                            className={`flex-1 py-2 rounded text-[10px] font-bold uppercase transition-all ${tempoRating === 'CHEATED' ? 'bg-red-500 text-white shadow' : 'text-gray-500 hover:text-white'}`}
+                                        >
+                                            Cheated
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -1331,6 +1429,7 @@ const ExerciseCard: React.FC<Props> = ({
                          </span>
                          <div className="flex gap-2 items-center">
                             {set.rpe && <span className={`text-[10px] font-bold ${getRPEColor(set.rpe)} border border-gray-700 px-1 rounded`}>RPE {set.rpe}</span>}
+                            {set.tempoRating && set.tempoRating !== 'PERFECT' && <span className={`text-[10px] font-bold ${set.tempoRating === 'CHEATED' ? 'text-red-400 border-red-500/50' : 'text-yellow-400 border-yellow-500/50'} border px-1 rounded`}>{set.tempoRating}</span>}
                             {set.isDropSet && <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Drop Set</span>}
                             {set.isMonsterSet && <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Monster Set</span>}
                             {set.calories && <span className="text-[10px] text-orange-400 flex items-center gap-1"><Flame size={8} fill="currentColor"/> {set.calories}</span>}
@@ -1368,7 +1467,10 @@ const ExerciseCard: React.FC<Props> = ({
                     <span className="font-mono text-white font-bold block">
                         {isCardio ? `${log.weight}km in ${log.reps}min` : `${log.weight}kg × ${log.reps}`}
                     </span>
-                    {log.rpe && <span className="text-xs text-gray-500 font-bold">RPE {log.rpe}</span>}
+                    <div className="flex gap-1 justify-end">
+                       {log.rpe && <span className="text-[10px] text-gray-500 font-bold">RPE {log.rpe}</span>}
+                       {log.tempoRating && <span className="text-[10px] text-blue-400 font-bold ml-1">{log.tempoRating.charAt(0)}</span>}
+                    </div>
                  </div>
                </div>
              ))}

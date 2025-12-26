@@ -1,9 +1,12 @@
 
+
 export type MuscleGroup = 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Triceps' | 'Biceps' | 'Abs' | 'Warmup' | 'Cardio' | 'Other';
 
 export type ExerciseType = 'weighted' | 'cardio';
 
 export type MotionType = 'press' | 'pull' | 'hinge' | 'curl' | 'raise' | 'hold' | 'fly' | 'cardio' | 'squat';
+
+export type TempoRating = 'PERFECT' | 'FAST' | 'CHEATED';
 
 export interface UserProfile {
   id: string;
@@ -65,6 +68,7 @@ export interface SetLog {
   weight: number; // For cardio: Distance
   reps: number; // For cardio: Time (minutes)
   rpe?: number; // New: Rate of Perceived Exertion (1-10)
+  tempoRating?: TempoRating; // New: Quality Gate
   completed: boolean;
   timestamp: number;
   isDropSet?: boolean; 
@@ -106,7 +110,16 @@ export interface HistoryLog {
   weight: number;
   reps: number;
   rpe?: number; // New: RPE History
+  tempoRating?: TempoRating; // New: Quality Tracking
   setNumber: number;
+}
+
+export interface NutritionLog {
+  id: string;
+  timestamp: number; // ms
+  date: string; // ISO YYYY-MM-DD
+  calories: number;
+  name: string;
 }
 
 export interface SkippedEntry {
@@ -127,7 +140,7 @@ export interface ExerciseHistory {
   logs: HistoryLog[];
   lastSession?: {
     date: string;
-    topSet: { weight: number; reps: number; rpe?: number };
+    topSet: { weight: number; reps: number; rpe?: number; tempoRating?: TempoRating };
   };
 }
 
@@ -136,7 +149,9 @@ export interface DashboardStats {
   missedMuscles: string[];
   personalRecords: Record<string, { weight: number; exerciseName: string; date: string }>;
   bestLift: { weight: number; exerciseName: string } | null;
-  totalCalories: number; // Weekly estimate
+  totalCaloriesBurned: number; // Weekly estimate
+  totalCaloriesIn: number; // Weekly intake
+  nutritionLogs: NutritionLog[]; // Recent logs
 }
 
 export interface CoachRecommendation {
