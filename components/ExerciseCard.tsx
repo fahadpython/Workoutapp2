@@ -17,11 +17,54 @@ interface Props {
   onUpdateWater: (amount: number) => void;
 }
 
+// --- HELPER TEXT LOGIC ---
+const getInputHelpers = (exercise: Exercise) => {
+    const name = exercise.name.toLowerCase();
+    const isCardio = exercise.type === 'cardio';
+    
+    if (isCardio) {
+        return { 
+            weightHelper: "Total Distance", 
+            repsHelper: "Total Time" 
+        };
+    }
+
+    let weightHelper = "Total Weight";
+    let repsHelper = "Total Reps";
+
+    // --- WEIGHT RULES ---
+    if (name.includes('dumb') || name.includes('db') || name.includes('hammer')) {
+        weightHelper = "Weight of ONE Dumbbell";
+    } else if (name.includes('barbell') || name.includes('deadlift') || name.includes('bench') || name.includes('squat') || name.includes('skull')) {
+        weightHelper = "Total (Bar + Plates)";
+    } else if (name.includes('cable') || name.includes('pulldown') || name.includes('row') || name.includes('pec deck') || name.includes('extension') || name.includes('face pull') || name.includes('machine') || name.includes('pressdown')) {
+        weightHelper = "Stack Weight";
+    } else if (name.includes('leg raise') || name.includes('bodyweight') || name.includes('dip') || name.includes('pull up') || name.includes('chin up') || name.includes('plank')) {
+        weightHelper = "Added Weight (0 if none)";
+    } else if (name.includes('hyperextension')) {
+        weightHelper = "Weight of Plate Held";
+    } else if (name.includes('overhead press')) {
+        weightHelper = "Total (Bar) or One DB";
+    }
+
+    // Specific Overrides
+    if (name.includes('cable crossover')) weightHelper = "Weight of One Stack";
+
+    // --- REPS RULES ---
+    if (name.includes('lateral') || name.includes('woodchop') || name.includes('hammer') || (name.includes('curl') && (name.includes('db') || name.includes('dumb')))) {
+        repsHelper = "Reps per ONE Arm/Side";
+    } else if (exercise.isTimed || name.includes('plank')) {
+        repsHelper = "Time in Seconds";
+    }
+
+    return { weightHelper, repsHelper };
+};
+
 // --- SUB-COMPONENT: SMART LOG BAR ---
 const SmartLogBar: React.FC<{
     lastWeight: number;
     lastReps: number;
-    onFill: (w: number, r: number) => void;
+    onFill: (w: number, r: number, rpe?: number, tempo?: TempoRating) => void;
 }> = ({ lastWeight, lastReps, onFill }) => {
     const [isListening, setIsListening] = useState(false);
     const [supportError, setSupportError] = useState<string | null>(null);
@@ -58,20 +101,38 @@ const SmartLogBar: React.FC<{
             };
 
             recognition.onresult = (event: any) => {
-                const text = event.results[0][0].transcript;
+                const text = event.results[0][0].transcript.toLowerCase();
                 console.log("Heard:", text);
                 
-                // Regex to find numbers. Expected: "80 for 10", "100 kg 5 reps", "80 10"
-                // Matches integers or decimals
-                const numbers = text.match(/(\d+(\.\d+)?)/g);
+                // 1. Detect Tempo Keywords
+                let detectedTempo: TempoRating | undefined;
+                if (text.includes('cheat') || text.includes('bad') || text.includes('messy')) detectedTempo = 'CHEATED';
+                else if (text.includes('fast') || text.includes('quick') || text.includes('speed')) detectedTempo = 'FAST';
+                else if (text.includes('perfect') || text.includes('slow') || text.includes('control') || text.includes('good')) detectedTempo = 'PERFECT';
+
+                // 2. Extract Numbers
+                // Expected format: "Weight ... Reps ... [RPE]"
+                const numbers = text.match(/(\d+(\.\d+)?)/g)?.map(Number);
                 
-                if (numbers && numbers.length >= 2) {
-                    const w = parseFloat(numbers[0]);
-                    const r = parseFloat(numbers[1]);
-                    onFill(w, r);
-                } else if (numbers && numbers.length === 1) {
-                    // Assume weight only if one number, reuse last reps
-                    onFill(parseFloat(numbers[0]), lastReps || 0);
+                if (numbers && numbers.length > 0) {
+                    let w = 0;
+                    let r = 0;
+                    let rpe = undefined;
+
+                    if (numbers.length >= 3) {
+                        w = numbers[0];
+                        r = numbers[1];
+                        // If 3rd number is small (<=10), assume RPE
+                        if (numbers[2] <= 10) rpe = numbers[2];
+                    } else if (numbers.length === 2) {
+                        w = numbers[0];
+                        r = numbers[1];
+                    } else if (numbers.length === 1) {
+                        w = numbers[0];
+                        r = lastReps || 0;
+                    }
+                    
+                    onFill(w, r, rpe, detectedTempo);
                 } else {
                     setSupportError("Didn't catch numbers. Try '80 10'");
                     setTimeout(() => setSupportError(null), 3000);
@@ -150,12 +211,12 @@ const SmartLogBar: React.FC<{
             {/* Help Tooltip */}
             {showHelp && (
                 <div className="mt-2 bg-gym-800 p-3 rounded-lg border border-gym-700 text-xs text-gray-300 animate-in fade-in">
-                    <p className="font-bold text-white mb-1">How to use Voice Log:</p>
-                    <p>Tap the mic and say two numbers.</p>
-                    <ul className="list-disc list-inside mt-1 text-[10px] text-gray-400">
-                        <li>"<strong>80</strong> kilos <strong>10</strong> reps"</li>
-                        <li>"<strong>100</strong> for <strong>5</strong>"</li>
-                        <li>"<strong>20</strong> <strong>12</strong>"</li>
+                    <p className="font-bold text-white mb-1">Voice Commands:</p>
+                    <ul className="list-disc list-inside mt-1 text-[10px] text-gray-400 space-y-1">
+                        <li>"<strong>80</strong> kg <strong>10</strong> reps"</li>
+                        <li>"<strong>100</strong> <strong>5</strong> RPE <strong>9</strong>" (Add RPE)</li>
+                        <li>"<strong>20</strong> <strong>12</strong> <strong>Perfect</strong>" (Add Tempo)</li>
+                        <li>"<strong>60</strong> <strong>10</strong> <strong>Fast</strong>"</li>
                     </ul>
                 </div>
             )}
@@ -529,6 +590,9 @@ const ExerciseCard: React.FC<Props> = ({
 
   // Animation Modal
   const [showAnimation, setShowAnimation] = useState(false);
+
+  // Dynamic Input Helpers
+  const { weightHelper, repsHelper } = getInputHelpers(exercise);
 
   const isCardio = exercise.type === 'cardio';
   // If it's timed (like Plank), treat metric2 as Time
@@ -1225,7 +1289,12 @@ const ExerciseCard: React.FC<Props> = ({
                         <SmartLogBar 
                             lastWeight={lastSession?.weight || 0}
                             lastReps={lastSession?.reps || 0}
-                            onFill={(w, r) => { setMetric1(w.toString()); setMetric2(r.toString()); }}
+                            onFill={(w, r, newRpe, newTempo) => { 
+                                setMetric1(w.toString()); 
+                                setMetric2(r.toString());
+                                if (newRpe !== undefined) setRpe(newRpe);
+                                if (newTempo !== undefined) setTempoRating(newTempo);
+                            }}
                         />
 
                         <div className="flex gap-4 mb-4 relative z-10">
@@ -1241,6 +1310,7 @@ const ExerciseCard: React.FC<Props> = ({
                                   placeholder={lastSession ? `${lastSession.weight}` : recommendation?.targetWeight ? `${recommendation.targetWeight}` : '-'}
                                   className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
                               />
+                              <p className="text-[9px] text-gray-500 mt-1 text-center font-bold">{isCardio ? 'Total Distance' : weightHelper}</p>
                           </div>
                           <div className="w-1/2">
                               <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">
@@ -1253,6 +1323,7 @@ const ExerciseCard: React.FC<Props> = ({
                                   placeholder={lastSession ? `${lastSession.reps}` : isCardio ? '10' : (exercise.reps || "-")}
                                   className={`w-full bg-gym-900 border rounded-xl p-4 text-2xl text-white text-center font-bold focus:outline-none transition-all ${inputBorderClass}`}
                               />
+                              <p className="text-[9px] text-gray-500 mt-1 text-center font-bold">{isCardio ? 'Total Time' : (isTimed ? 'Seconds' : repsHelper)}</p>
                           </div>
                         </div>
 
