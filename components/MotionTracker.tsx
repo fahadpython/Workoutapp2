@@ -37,9 +37,12 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   const processorRef = useRef<MotionProcessor | null>(null);
   const isMutedRef = useRef(false);
   const isVibrationOffRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const modeRef = useRef('STANDARD');
 
   // --- INIT ---
   useEffect(() => {
+    isMountedRef.current = true;
     if ('speechSynthesis' in window) synthRef.current = window.speechSynthesis;
     
     // Auto-detect existing calibration
@@ -49,6 +52,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     }
 
     return () => {
+        isMountedRef.current = false;
         cleanup();
     };
   }, []);
@@ -57,16 +61,22 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   useEffect(() => {
       isMutedRef.current = isMuted;
       isVibrationOffRef.current = isVibrationOff;
-  }, [isMuted, isVibrationOff]);
+      modeRef.current = mode;
+  }, [isMuted, isVibrationOff, mode]);
 
   const cleanup = () => {
-      if (synthRef.current) synthRef.current.cancel();
-      if (processorRef.current) processorRef.current.cleanup();
+      if (synthRef.current) {
+          synthRef.current.cancel();
+      }
+      if (processorRef.current) {
+          processorRef.current.cleanup();
+          processorRef.current = null;
+      }
       window.removeEventListener('deviceorientation', handleOrientation);
   };
 
   const handleOrientation = (event: DeviceOrientationEvent) => {
-    if (processorRef.current && !isPaused && !isManualMode) {
+    if (processorRef.current && !isPaused && !isManualMode && isMountedRef.current) {
       processorRef.current.process(event.alpha, event.beta, event.gamma);
     }
   };
@@ -102,6 +112,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
     processorRef.current = new MotionProcessor(
       exercise,
       (event) => {
+        if (!isMountedRef.current) return;
+
         setProcessorEvent(event);
         
         // Voice Feedback
@@ -113,9 +125,14 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           setReps(event.repCount);
           onRepCount(event.repCount);
           speak(String(event.repCount));
-          triggerHaptic([50, 50]);
+          
+          // In GAME mode, only vibrate on mistakes, not successes
+          if (modeRef.current === 'STANDARD') {
+              triggerHaptic([50, 50]);
+          }
         }
         
+        // Feedback vibration (Mistakes) - Always allowed in both modes
         if (event.feedbackType === 'TOO_FAST' || event.feedbackType === 'TOO_SLOW') {
             triggerHaptic([200]);
         }
@@ -144,6 +161,10 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       if (processorRef.current) processorRef.current.startCalibrationCountdown();
       
       const int = setInterval(() => {
+          if (!isMountedRef.current) {
+              clearInterval(int);
+              return;
+          }
           setCalibCount(prev => {
               if (prev <= 1) {
                   clearInterval(int);
@@ -186,7 +207,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
 
   // --- AUDIO & HAPTICS ---
   const speak = (text: string) => {
-    if (isMutedRef.current || !synthRef.current) return;
+    if (isMutedRef.current || !synthRef.current || !isMountedRef.current) return;
     if (synthRef.current.speaking) return; 
     
     const u = new SpeechSynthesisUtterance(text);
@@ -195,7 +216,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   };
 
   const triggerHaptic = (pattern: number[]) => {
-    if (isVibrationOffRef.current || !navigator.vibrate) return;
+    if (isVibrationOffRef.current || !navigator.vibrate || !isMountedRef.current) return;
     navigator.vibrate(pattern);
   };
 

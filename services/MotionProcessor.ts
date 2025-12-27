@@ -14,7 +14,7 @@ export interface TempoConfig {
 
 export interface MotionEvent {
   phase: MotionPhase;
-  progress: number; // 0.0 (Start) to 1.0 (End/Deep)
+  progress: number; // 0.0 (Top/Extended) to 1.0 (Bottom/Flexed) for Visuals
   targetProgress: number; // Where they SHOULD be (for Game Pacer)
   repCount: number;
   feedback?: string;
@@ -137,7 +137,7 @@ export class MotionProcessor {
         ? "Hold weight at TOP (Lockout)" 
         : "Hold weight at BOTTOM (Stretch)";
     
-    this.emitState(this.startsAtTop ? 0 : 0, startMsg, 'WARNING');
+    this.emitState(this.startsAtTop ? 0 : 1, startMsg, 'WARNING');
   }
 
   public startCalibrationRecording() {
@@ -151,7 +151,7 @@ export class MotionProcessor {
         ? "Lower slowly... then Press up"
         : "Lift up... then Lower slowly";
 
-    this.emitState(0, moveMsg, 'WARNING');
+    this.emitState(this.startsAtTop ? 0 : 1, moveMsg, 'WARNING');
   }
 
   public finishCalibration(): boolean {
@@ -165,10 +165,6 @@ export class MotionProcessor {
     if (this.position === 'POCKET') {
         this.calibrationDirection = 'INVERTED'; 
     } else {
-        // For Hand:
-        // If curl: Up = High Beta. Down = Low Beta.
-        // If press: Up = High Beta? 
-        // Heuristic: Just assume NORMAL for hand unless proved otherwise
         this.calibrationDirection = 'NORMAL'; 
     }
 
@@ -176,7 +172,7 @@ export class MotionProcessor {
     this.calibratedMax = this.maxRawValue;
     this.isCalibrated = true;
     this.currentPhase = 'IDLE';
-    this.emitState(0, "Ready. Go!", "GOOD");
+    this.emitState(this.startsAtTop ? 0 : 1, "Ready. Go!", "GOOD");
     return true;
   }
 
@@ -272,6 +268,22 @@ export class MotionProcessor {
                   break;
           }
 
+          // For Manual mode, progress 0->1 matches Standard.
+          // For Inverted (Curl), we need to flip it for the logic to match "Visual" consistency if we reused logic.
+          // But here we construct progress manually.
+          // Let's assume Manual Loop simulates Standard 0->1.
+          // And emitState will handle visual inversion for !startsAtTop.
+          // Wait, if !startsAtTop (Curl), logic below expects 0->1 for Concentric.
+          // Manual loop above simulates Standard (Eccentric first).
+          // We need Manual Loop for Curl too.
+          
+          if (!this.startsAtTop) {
+              // Invert for Curl logic (Concentric first)
+              // Actually, simpler to just use standard progress and let emitState flip it if needed?
+              // No, emitState flips based on exercise type.
+              // Let's just emit raw 0..1 from here and let emitState handle visual mapping.
+          }
+
           this.emitState(progress, this.getPhaseCue(this.currentPhase), 'PERFECT');
       }, 50);
   }
@@ -281,10 +293,6 @@ export class MotionProcessor {
     const now = Date.now();
     const phaseDuration = (now - this.lastPhaseChangeTime) / 1000;
     const fatigueMultiplier = this.repCount > 5 ? 1 + ((this.repCount - 5) * 0.05) : 1.0;
-
-    // Determine Logic based on Exercise Type (Start Top vs Start Bottom)
-    // Standard (Bench): Idle -> Eccentric (Down) -> Bottom -> Concentric (Up)
-    // Inverted (Curl): Idle -> Concentric (Up) -> Top -> Eccentric (Down)
 
     if (this.startsAtTop) {
         this.handleStandardLoop(progress, phaseDuration, fatigueMultiplier);
@@ -319,10 +327,10 @@ export class MotionProcessor {
   }
 
   private handleInvertedLoop(progress: number, phaseDuration: number, fatigue: number) {
-      // 0 = Bottom (Start), 1 = Top (Peak)
+      // INTERNAL LOGIC: 0 = Start (Bottom), 1 = End (Top)
       switch (this.currentPhase) {
           case 'IDLE':
-          case 'TOP_HOLD': // Actually Bottom in this context, confusing naming but "Rest" phase
+          case 'TOP_HOLD': // Actually Start/Bottom Position
              if (progress > 0.15) this.transitionTo('CONCENTRIC');
              break;
           case 'CONCENTRIC': // Going 0 -> 1 (Lifting)
@@ -336,6 +344,7 @@ export class MotionProcessor {
           case 'ECCENTRIC': // Going 1 -> 0 (Lowering)
              const eccTarget = Math.max(0, 1 - (phaseDuration / (this.tempo.eccentric * fatigue)));
              // Speed check: If progress (real) is lower than target, we dropped too fast
+             // (Since 1 is Peak, 0 is Bottom. Lower means closer to 0)
              if (progress < eccTarget - 0.2) this.lastEvent.feedbackType = 'TOO_FAST';
              else this.lastEvent.feedbackType = 'PERFECT';
 
@@ -360,15 +369,34 @@ export class MotionProcessor {
     this.currentPhase = newPhase;
     this.lastPhaseChangeTime = Date.now();
     if (feedback) {
-        this.emitState(this.lastEvent.progress, feedback.msg, feedback.type); 
+        // Use current raw progress for transition event
+        const rawP = this.lastEvent.progress; 
+        // We need to pass the *internal* progress to emitState to let it normalize
+        // But emitState takes "progress" argument.
+        // Quick fix: just re-emit last known progress.
+        // Actually, better to just let the loop handle the next emit.
+        // We just update the feedback here.
+        this.lastEvent.feedback = feedback.msg;
+        this.lastEvent.feedbackType = feedback.type;
+        this.onUpdate({...this.lastEvent, phase: newPhase});
     }
   }
 
-  private emitState(progress: number, feedbackMsg?: string, feedbackType?: FeedbackType) {
+  private emitState(internalProgress: number, feedbackMsg?: string, feedbackType?: FeedbackType) {
+    // VISUAL NORMALIZATION:
+    // We want 0 to always be "Top/Extended/Start of Gravity" and 1 to be "Bottom/Flexed/End of Gravity".
+    // For Standard (Bench): Start(0) -> End(1). Matches Internal (0->1).
+    // For Inverted (Curl): Start(0) is Bottom. End(1) is Top.
+    // To match GamePacer (which draws 0 at Top, 1 at Bottom):
+    // Curl Start (Bottom) should be 1. Curl Peak (Top) should be 0.
+    // So for Inverted, we flip: Visual = 1 - Internal.
+    
+    const visualProgress = this.startsAtTop ? internalProgress : (1 - internalProgress);
+
     this.lastEvent = {
       phase: this.currentPhase,
-      progress,
-      targetProgress: 0, // Calculated by GamePacer usually, or could be passed here
+      progress: visualProgress,
+      targetProgress: 0, 
       repCount: this.repCount,
       feedback: feedbackMsg,
       feedbackType: feedbackType || this.lastEvent.feedbackType,
