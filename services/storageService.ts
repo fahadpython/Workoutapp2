@@ -1,3 +1,4 @@
+
 import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise, TempoRating, NutritionLog } from '../types';
 import { ALL_WORKOUTS } from '../constants';
 
@@ -13,13 +14,14 @@ const BASE_KEYS = {
   SESSION: 'iron_guide_session_v2',
   STATS: 'iron_guide_stats_v2',
   HISTORY: 'iron_guide_history_v2',
-  CALIBRATION: 'iron_guide_calibration_v1',
+  CALIBRATION: 'iron_guide_calibration_v2', // Updated version
   NOTES: 'iron_guide_notes_v1',
-  SKIPPED: 'iron_guide_skipped_v1', // Track skip history
-  PENDING: 'iron_guide_pending_v1', // Track rescheduled items
-  NUTRITION: 'iron_guide_nutrition_v1', // Track calorie intake
+  SKIPPED: 'iron_guide_skipped_v1', 
+  PENDING: 'iron_guide_pending_v1', 
+  NUTRITION: 'iron_guide_nutrition_v1', 
 };
 
+// ... (Keep existing User Management, Migration, Backup logic identical) ...
 // State to hold current user ID in memory
 let currentUserId: string | null = localStorage.getItem(GLOBAL_KEYS.ACTIVE_USER_ID);
 
@@ -51,7 +53,6 @@ export const createUser = (name: string): UserProfile => {
 export const switchUser = (userId: string) => {
   currentUserId = userId;
   localStorage.setItem(GLOBAL_KEYS.ACTIVE_USER_ID, userId);
-  // Reload page is often safest to reset all state hooks, but we can try to manage it via App state
 };
 
 export const getCurrentUser = (): UserProfile | null => {
@@ -61,41 +62,29 @@ export const getCurrentUser = (): UserProfile | null => {
 };
 
 export const deleteUser = (userId: string) => {
-  // Remove registry entry
   const users = getUsers().filter(u => u.id !== userId);
   localStorage.setItem(GLOBAL_KEYS.USERS_REGISTRY, JSON.stringify(users));
-  
-  // Remove all prefixed keys
   const prefix = `user_${userId}_`;
   Object.keys(localStorage).forEach(key => {
     if (key.startsWith(prefix)) {
       localStorage.removeItem(key);
     }
   });
-
   if (currentUserId === userId) {
     currentUserId = null;
     localStorage.removeItem(GLOBAL_KEYS.ACTIVE_USER_ID);
   }
 };
 
-// --- LEGACY MIGRATION ---
-// Moves data from "root" keys to a new "Default User" if no users exist
 export const checkAndMigrateLegacyData = (): boolean => {
   const users = getUsers();
-  if (users.length > 0) return false; // Already have users, no auto-migration
-
-  // Check if legacy data exists
+  if (users.length > 0) return false; 
   const hasHistory = localStorage.getItem(BASE_KEYS.HISTORY);
   const hasStats = localStorage.getItem(BASE_KEYS.STATS);
-
   if (hasHistory || hasStats) {
-    // Create default user
     const defaultUser = createUser("Default User");
     currentUserId = defaultUser.id;
     localStorage.setItem(GLOBAL_KEYS.ACTIVE_USER_ID, defaultUser.id);
-
-    // Helper to move key
     const move = (baseKey: string) => {
       const data = localStorage.getItem(baseKey);
       if (data) {
@@ -103,21 +92,17 @@ export const checkAndMigrateLegacyData = (): boolean => {
         localStorage.removeItem(baseKey);
       }
     };
-
     move(BASE_KEYS.SESSION);
     move(BASE_KEYS.STATS);
     move(BASE_KEYS.HISTORY);
     move(BASE_KEYS.CALIBRATION);
-    return true; // Migration happened
+    return true; 
   }
   return false;
 };
 
-// --- BACKUP & RESTORE ---
-
 export const exportUserData = () => {
   if (!currentUserId) return null;
-  
   const backup = {
     userProfile: getCurrentUser(),
     timestamp: Date.now(),
@@ -132,7 +117,6 @@ export const exportUserData = () => {
       nutrition: localStorage.getItem(getKey(BASE_KEYS.NUTRITION)),
     }
   };
-
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup));
   const downloadAnchorNode = document.createElement('a');
   downloadAnchorNode.setAttribute("href", dataStr);
@@ -149,20 +133,14 @@ export const importUserData = async (file: File): Promise<boolean> => {
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        
-        // Basic validation
         if (!json.userProfile || !json.data) {
           alert("Invalid backup file format.");
           return resolve(false);
         }
-
-        // Determine target user ID (Current active user)
         if (!currentUserId) {
            alert("Please log in to a user before restoring.");
            return resolve(false);
         }
-
-        // Restore Data keys to CURRENT user (overwriting)
         if (json.data.session) localStorage.setItem(getKey(BASE_KEYS.SESSION), json.data.session);
         if (json.data.stats) localStorage.setItem(getKey(BASE_KEYS.STATS), json.data.stats);
         if (json.data.history) localStorage.setItem(getKey(BASE_KEYS.HISTORY), json.data.history);
@@ -171,7 +149,6 @@ export const importUserData = async (file: File): Promise<boolean> => {
         if (json.data.skipped) localStorage.setItem(getKey(BASE_KEYS.SKIPPED), json.data.skipped);
         if (json.data.pending) localStorage.setItem(getKey(BASE_KEYS.PENDING), json.data.pending);
         if (json.data.nutrition) localStorage.setItem(getKey(BASE_KEYS.NUTRITION), json.data.nutrition);
-
         resolve(true);
       } catch (e) {
         console.error(e);
@@ -183,12 +160,7 @@ export const importUserData = async (file: File): Promise<boolean> => {
   });
 };
 
-
-// --- CORE STORAGE FUNCTIONS (Updated to use getKey) ---
-
-// Dynamically aggregate all exercises from the new schedule
 const ALL_EXERCISES = ALL_WORKOUTS.flatMap(day => day.exercises);
-
 export const getTodayString = () => new Date().toISOString().split('T')[0];
 
 export const saveSession = (session: SessionData | null) => {
@@ -218,34 +190,24 @@ export const loadUserStats = (): UserStats => {
     creatineHistory: [],
     lastUpdated: getTodayString(),
   };
-
   if (!data) return defaultStats;
-
   const parsed = JSON.parse(data);
-  // Reset daily trackers if date changed
   if (parsed.lastUpdated !== getTodayString()) {
     return {
       ...parsed,
       waterIntake: 0,
-      creatineTaken: false, // Reset the daily toggle
-      // Preserve history
+      creatineTaken: false,
       creatineHistory: parsed.creatineHistory || [],
       lastUpdated: getTodayString(),
     };
   }
-  return {
-      ...parsed,
-      creatineHistory: parsed.creatineHistory || []
-  };
+  return { ...parsed, creatineHistory: parsed.creatineHistory || [] };
 };
-
-// --- NUTRITION LOGIC ---
 
 export const logNutrition = (calories: number, name: string) => {
     const key = getKey(BASE_KEYS.NUTRITION);
     const raw = localStorage.getItem(key);
     const logs: NutritionLog[] = raw ? JSON.parse(raw) : [];
-    
     const newLog: NutritionLog = {
         id: Date.now().toString(),
         timestamp: Date.now(),
@@ -253,7 +215,6 @@ export const logNutrition = (calories: number, name: string) => {
         calories,
         name: name || "Snack"
     };
-    
     logs.push(newLog);
     localStorage.setItem(key, JSON.stringify(logs));
     return newLog;
@@ -267,12 +228,9 @@ export const getNutritionLogs = (): NutritionLog[] => {
 export const getTodayNutritionTotal = (): number => {
     const logs = getNutritionLogs();
     const today = getTodayString();
-    return logs
-        .filter(l => l.date === today)
-        .reduce((sum, l) => sum + l.calories, 0);
+    return logs.filter(l => l.date === today).reduce((sum, l) => sum + l.calories, 0);
 };
 
-// --- NOTES FEATURE ---
 export const saveExerciseNote = (exerciseId: string, note: string) => {
     const key = getKey(BASE_KEYS.NOTES);
     const raw = localStorage.getItem(key);
@@ -289,25 +247,17 @@ export const getExerciseNote = (exerciseId: string): string => {
     return db[exerciseId] || "";
 };
 
-// --- SKIPPING & PENDING LOGIC ---
-
 export const saveSkippedExercise = (exerciseId: string, reason: string, targetWorkoutId?: string) => {
     const today = getTodayString();
-    
-    // 1. Save to Skipped History
     const skippedKey = getKey(BASE_KEYS.SKIPPED);
     const skippedRaw = localStorage.getItem(skippedKey);
     const skippedList: SkippedEntry[] = skippedRaw ? JSON.parse(skippedRaw) : [];
-    
     skippedList.push({ exerciseId, date: today, reason });
     localStorage.setItem(skippedKey, JSON.stringify(skippedList));
-
-    // 2. Add to Pending if rescheduled
     if (targetWorkoutId) {
         const pendingKey = getKey(BASE_KEYS.PENDING);
         const pendingRaw = localStorage.getItem(pendingKey);
         const pendingList: PendingExercise[] = pendingRaw ? JSON.parse(pendingRaw) : [];
-        
         pendingList.push({
             exerciseId,
             originalDate: today,
@@ -322,15 +272,11 @@ export const getPendingExercises = (currentWorkoutId?: string): PendingExercise[
     const key = getKey(BASE_KEYS.PENDING);
     const raw = localStorage.getItem(key);
     if (!raw) return [];
-    
     const list: PendingExercise[] = JSON.parse(raw);
-    const today = getTodayString();
-    
     if (currentWorkoutId) {
-        // Return items specifically scheduled for this workout
         return list.filter(item => item.targetWorkoutId === currentWorkoutId);
     } else {
-        // Fallback: Return items scheduled for today's date (Legacy logic)
+        const today = getTodayString();
         return list.filter(item => item.targetDate && item.targetDate <= today);
     }
 };
@@ -339,11 +285,8 @@ export const completePendingExercise = (exerciseId: string) => {
     const key = getKey(BASE_KEYS.PENDING);
     const raw = localStorage.getItem(key);
     if (!raw) return;
-    
     let list: PendingExercise[] = JSON.parse(raw);
-    // Remove completed item (filter out match)
     list = list.filter(item => item.exerciseId !== exerciseId);
-    
     localStorage.setItem(key, JSON.stringify(list));
 };
 
@@ -351,55 +294,35 @@ export const wasSkippedLastSession = (exerciseId: string): boolean => {
     const key = getKey(BASE_KEYS.SKIPPED);
     const raw = localStorage.getItem(key);
     if (!raw) return false;
-    
     const list: SkippedEntry[] = JSON.parse(raw);
-    
-    // Filter for this exercise
     const mySkips = list.filter(s => s.exerciseId === exerciseId);
     if (mySkips.length === 0) return false;
-    
-    // Sort descending by date
     mySkips.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
     const lastSkip = mySkips[0];
     const skipDate = new Date(lastSkip.date);
     const now = new Date();
-    
-    // Check if it was within the last 14 days (approx last "week" or session cycle)
     const diffTime = Math.abs(now.getTime() - skipDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-    
     return diffDays <= 14;
 };
 
-// --- Helper: Calorie Calculation ---
 export const calculateCalories = (metric1: number, metric2: number, metValue: number, isCardio: boolean = false) => {
-    // Formula: MET * BodyWeight(kg) * Duration(hours)
     const stats = loadUserStats();
     const bw = stats.bodyWeight > 0 ? stats.bodyWeight : 75;
-    
     let durationHours = 0;
-
     if (isCardio) {
-      // Metric 2 is Time in minutes
       durationHours = metric2 / 60;
     } else {
-      // Metric 2 is Reps, estimate 4s per rep
       durationHours = (metric2 * 4) / 3600; 
     }
-    
-    return Math.round((metValue * bw * durationHours) * 10) / 10; // Round to 1 decimal
+    return Math.round((metValue * bw * durationHours) * 10) / 10; 
 };
-
-// --- History Management ---
 
 export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number, rpe?: number, tempoRating?: TempoRating) => {
   const key = getKey(BASE_KEYS.HISTORY);
   const historyRaw = localStorage.getItem(key);
   const history = historyRaw ? JSON.parse(historyRaw) : {};
-  
   if (!history[exerciseId]) history[exerciseId] = [];
-  
   const newLog: HistoryLog = {
     date: getTodayString(),
     weight,
@@ -408,97 +331,61 @@ export const saveExerciseLog = (exerciseId: string, weight: number, reps: number
     rpe,
     tempoRating
   };
-  
-  // Append new log
   history[exerciseId].push(newLog);
-  
   localStorage.setItem(key, JSON.stringify(history));
-  
-  // Also clear pending if it exists
   completePendingExercise(exerciseId);
 };
 
 export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null => {
   const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   if (!historyRaw) return null;
-  
   const fullHistory = JSON.parse(historyRaw);
   const logs = fullHistory[exerciseId] as HistoryLog[] || [];
-
   if (logs.length === 0) return null;
-
-  // Find last session (not today)
   const today = getTodayString();
   const previousLogs = logs.filter(l => l.date !== today);
-  
   let lastSession = undefined;
   if (previousLogs.length > 0) {
-    // Sort by date desc
     previousLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const lastDate = previousLogs[0].date;
     const lastDateLogs = previousLogs.filter(l => l.date === lastDate);
-    
-    // Find best performance (highest weight, then reps)
-    // We treat the "Top Set" as the one with max weight.
     lastDateLogs.sort((a, b) => b.weight - a.weight || b.reps - a.reps);
-    
     const bestLog = lastDateLogs[0];
-
     lastSession = {
       date: lastDate,
       topSet: { weight: bestLog.weight, reps: bestLog.reps, rpe: bestLog.rpe, tempoRating: bestLog.tempoRating }
     };
   }
-
   return {
-    logs: logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), // return all logs sorted new -> old
+    logs: logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), 
     lastSession
   };
 };
 
 export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommendation: string | null } => {
-  // WARMUP EXCLUSION
   const exercise = ALL_EXERCISES.find(e => e.id === exerciseId);
   if (exercise?.isWarmup) return { isStalled: false, recommendation: null };
-
   const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   if (!historyRaw) return { isStalled: false, recommendation: null };
-  
   const fullHistory = JSON.parse(historyRaw);
   const logs = fullHistory[exerciseId] as HistoryLog[] || [];
-
   if (logs.length < 2) return { isStalled: false, recommendation: null };
-
-  // Sort logs by date desc
   const sortedLogs = logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
-  // Get unique dates
   const uniqueDates = Array.from(new Set(sortedLogs.map(l => l.date)));
-  
-  // Filter out "today" to identify historical stalls
   const today = getTodayString();
   const historicalDates = uniqueDates.filter(d => d !== today);
-
   if (historicalDates.length < 2) return { isStalled: false, recommendation: null };
-
   const session1Date = historicalDates[0];
   const session2Date = historicalDates[1];
-
   const getTopSet = (date: string) => {
     const sessionLogs = sortedLogs.filter(l => l.date === date);
-    // Sort by weight desc, then reps desc
     sessionLogs.sort((a, b) => b.weight - a.weight || b.reps - a.reps);
     return sessionLogs[0];
   };
-
   const topSet1 = getTopSet(session1Date);
   const topSet2 = getTopSet(session2Date);
-
   if (!topSet1 || !topSet2) return { isStalled: false, recommendation: null };
-
-  // Stalled definition: Same weight AND Same reps (or less) for top set
   if (topSet1.weight === topSet2.weight && topSet1.reps <= topSet2.reps) {
-     // Suggest Deload
      const deloadWeight = Math.floor((topSet1.weight * 0.9) / 1.25) * 1.25; 
      const targetReps = Math.floor(topSet1.reps * 1.2); 
      return {
@@ -506,12 +393,10 @@ export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommen
          recommendation: `You are stalled at ${topSet1.weight}kg. Strategy: Drop weight to ${deloadWeight}kg and aim for ${targetReps} reps to reset.`
      };
   }
-
   return { isStalled: false, recommendation: null };
 };
 
 export const clearAllData = () => {
-  // Only clear current user data
   if (currentUserId) {
       localStorage.removeItem(getKey(BASE_KEYS.SESSION));
       localStorage.removeItem(getKey(BASE_KEYS.STATS));
@@ -542,70 +427,46 @@ export const getCalibration = (exerciseId: string): MotionCalibration | null => 
   return db[exerciseId] || null;
 };
 
-// --- Analytics ---
-
+// ... (Rest of analytics functions remain unchanged) ...
 export const getDashboardStats = (): DashboardStats => {
   const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
-  
-  // 1. Weekly Volume
   const weeklyVolume: Record<string, number> = {
     Chest: 0, Back: 0, Legs: 0, Shoulders: 0, Triceps: 0, Biceps: 0, Abs: 0, Cardio: 0
   };
-  
   const now = new Date();
-  const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay())); // Start from Sunday
+  const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay())); 
   startOfWeek.setHours(0,0,0,0);
-
-  // 2. PRs
   const personalRecords: Record<string, { weight: number; exerciseName: string; date: string }> = {};
   let bestLift: { weight: number; exerciseName: string } | null = null;
-  
-  // 3. Calories
   let totalCaloriesBurned = 0;
-
   Object.keys(fullHistory).forEach(exerciseId => {
     const logs = fullHistory[exerciseId] as HistoryLog[];
-    
     let exerciseDef = ALL_EXERCISES.find(e => e.id === exerciseId);
-    
     if (!exerciseDef) {
-       // Try custom if not in standard
        exerciseDef = { 
-         id: exerciseId, 
-         name: 'Exercise', 
-         type: 'weighted', 
-         sets: 3, reps: '10', 
+         id: exerciseId, name: 'Exercise', type: 'weighted', sets: 3, reps: '10', 
          restSeconds: 60, cues: '', muscleFocus: 'Custom', targetGroup: 'Other', feeling: '', 
          pacer: { phases: [], startDelay: 0 }, metValue: 4 
        } as any;
     }
-
-    // Skip warmups in PR/Analytics calc
     if (exerciseDef?.isWarmup) return;
-
     let maxWeight = 0;
     let prDate = '';
-    
     logs.forEach(log => {
-      // PR Logic
       if (log.weight > maxWeight && exerciseDef?.type === 'weighted') {
         maxWeight = log.weight;
         prDate = log.date;
       }
-
-      // Volume Logic
       if (new Date(log.date) >= startOfWeek) {
          if (exerciseDef?.targetGroup && weeklyVolume[exerciseDef.targetGroup] !== undefined) {
             weeklyVolume[exerciseDef.targetGroup]++;
          }
-         
          const isCardio = exerciseDef?.type === 'cardio';
          const setCals = calculateCalories(log.weight, log.reps, exerciseDef?.metValue || 4, isCardio);
          totalCaloriesBurned += setCals;
       }
     });
-
     if (maxWeight > 0 && exerciseDef?.type === 'weighted') {
       personalRecords[exerciseId] = { weight: maxWeight, exerciseName: exerciseDef?.name || 'Exercise', date: prDate };
       if (!bestLift || maxWeight > bestLift.weight) {
@@ -613,19 +474,12 @@ export const getDashboardStats = (): DashboardStats => {
       }
     }
   });
-
-  // 3. Missed Muscles
   const trackedMuscles: MuscleGroup[] = ['Chest', 'Back', 'Legs', 'Shoulders', 'Triceps', 'Biceps', 'Abs'];
   const missedMuscles = trackedMuscles.filter(m => weeklyVolume[m] === 0);
-
-  // 4. Nutrition Stats (Week)
   const nutritionLogs = getNutritionLogs();
   const weekNutritionLogs = nutritionLogs.filter(l => new Date(l.date) >= startOfWeek);
   const totalCaloriesIn = weekNutritionLogs.reduce((sum, log) => sum + log.calories, 0);
-
-  // Limit to last 20 logs for the dashboard object to keep it light, sorted newest first
   const recentLogs = nutritionLogs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 20);
-
   return {
     weeklyVolume,
     missedMuscles,
@@ -637,100 +491,62 @@ export const getDashboardStats = (): DashboardStats => {
   };
 };
 
-// --- HEATMAP ENGINE ---
-
 const mapMuscleToKey = (detailedName: string): string => {
     const n = detailedName.toLowerCase();
-    
-    // --- CHEST ---
     if (n.includes('upper chest')) return 'chest_upper';
     if (n.includes('lower chest') || n.includes('costal') || n.includes('mid chest') || n.includes('inner chest') || n.includes('chest')) return 'chest_lower';
-    
-    // --- SHOULDERS ---
     if (n.includes('front delt')) return 'shoulders_front';
     if (n.includes('side delt')) return 'shoulders_side';
     if (n.includes('rear delt')) return 'shoulders_rear';
-    if (n.includes('shoulder')) return 'shoulders_front'; // Default fallback
-    
-    // --- BACK ---
+    if (n.includes('shoulder')) return 'shoulders_front';
     if (n.includes('lat')) return 'lats';
     if (n.includes('lower back') || n.includes('erector')) return 'back_lower';
     if (n.includes('trap')) return 'traps';
     if (n.includes('upper back') || n.includes('mid back') || n.includes('rhomboid') || n.includes('teres') || n.includes('back')) return 'back_upper';
-    
-    // --- ARMS ---
     if (n.includes('long head triceps') || n.includes('tricep')) return 'triceps';
     if (n.includes('bicep') || n.includes('brachialis')) return 'biceps';
     if (n.includes('forearm') || n.includes('wrist') || n.includes('brachioradialis')) return 'forearms';
-    
-    // --- CORE ---
     if (n.includes('oblique')) return 'obliques';
     if (n.includes('abs') || n.includes('core')) return 'abs';
-    
-    // --- LEGS ---
     if (n.includes('quad')) return 'quads';
     if (n.includes('hamstring')) return 'hamstrings';
     if (n.includes('glute')) return 'glutes';
     if (n.includes('calf') || n.includes('soleus') || n.includes('gastro')) return 'calves';
-    
     return 'other';
 };
 
 export const getMuscleHeatmapData = (): Record<string, { hours: number; volume: number }> => {
     const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
     const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
-    
-    // Store last log time (ms) and weekly volume (kg)
     const muscleStats: Record<string, { lastLog: number, volume: number }> = {};
-    
     const now = Date.now();
     const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
-
     Object.keys(fullHistory).forEach(exId => {
         const logs = fullHistory[exId] as HistoryLog[];
         if (logs.length === 0) return;
-        
         const exDef = ALL_EXERCISES.find(e => e.id === exId);
         if (!exDef || !exDef.muscleSplit) return;
-        
-        // Sort logs desc
         const sortedLogs = logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        
-        // Check all logs for volume calculation within last week
         sortedLogs.forEach(log => {
             const logDate = new Date(log.date);
             const logTime = logDate.getTime();
-            
-            // Iterate over all muscles involved in this exercise
             Object.keys(exDef.muscleSplit!).forEach(mName => {
                 const percentage = exDef.muscleSplit![mName] || 0;
-                if (percentage < 10) return; // Ignore minimal stabilizers
-
+                if (percentage < 10) return; 
                 const key = mapMuscleToKey(mName);
                 if (key === 'other') return;
-
                 if (!muscleStats[key]) muscleStats[key] = { lastLog: 0, volume: 0 };
-
-                // Update Last Trained Time (if this log is more recent)
                 if (logTime > muscleStats[key].lastLog) {
                     muscleStats[key].lastLog = logTime;
                 }
-
-                // Add Volume if within last 7 days
                 if (logTime > oneWeekAgo) {
-                    // Volume = Weight * Reps * Sets(1) * Participation %
-                    // Note: This iterates per set log in history, so we just add it up
                     const setVol = log.weight * log.reps * (percentage / 100);
                     muscleStats[key].volume += setVol;
                 }
             });
         });
     });
-    
-    // Convert to final format
     const result: Record<string, { hours: number; volume: number }> = {};
-    
-    // Set defaults for common groups so they aren't undefined
     const commonKeys = [
         'chest_upper', 'chest_lower', 'shoulders_front', 'shoulders_side', 'shoulders_rear',
         'lats', 'back_upper', 'back_lower', 'traps', 
@@ -738,36 +554,28 @@ export const getMuscleHeatmapData = (): Record<string, { hours: number; volume: 
         'abs', 'obliques', 
         'quads', 'hamstrings', 'glutes', 'calves'
     ];
-    
     commonKeys.forEach(k => {
         if (muscleStats[k]) {
             const diffMs = now - muscleStats[k].lastLog;
-            // If never trained (lastLog=0), diff is huge.
             const hours = muscleStats[k].lastLog === 0 ? Infinity : diffMs / (1000 * 60 * 60);
             result[k] = { hours, volume: Math.round(muscleStats[k].volume) };
         } else {
             result[k] = { hours: Infinity, volume: 0 };
         }
     });
-    
     return result;
 };
 
 export const getCreatineStats = (history: string[]) => {
   const now = new Date();
   const currentMonth = now.toISOString().slice(0, 7); 
-  
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - now.getDay());
   startOfWeek.setHours(0,0,0,0);
-
   const thisWeek = history.filter(date => new Date(date) >= startOfWeek).length;
   const thisMonth = history.filter(date => date.startsWith(currentMonth)).length;
-
   return { thisWeek, thisMonth };
 };
-
-// --- COACHING & SUMMARY SERVICES ---
 
 export interface ReceiptData {
   date: string;
@@ -790,54 +598,37 @@ export const getSessionSummary = (session: SessionData): ReceiptData => {
   const hours = Math.floor(durationMs / 3600000);
   const minutes = Math.floor((durationMs % 3600000) / 60000);
   const durationStr = `${hours > 0 ? hours + 'h ' : ''}${minutes}m`;
-
   const dateStr = new Date(startTime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-
   let totalVolume = 0;
   const exercisesSummary: ReceiptData['exercises'] = [];
-
   const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
   const today = getTodayString();
-
   Object.entries(session.completedExercises).forEach(([exId, logs]) => {
     if (logs.length === 0) return;
-
     let exerciseName = "Unknown Exercise";
     let isCardio = false;
-
-    // Find exercise definition
-    // Check custom first
     let foundEx = session.customExercises?.find(e => e.id === exId);
     if (!foundEx) {
-        // Check standard
         foundEx = ALL_WORKOUTS.flatMap(w => w.exercises).find(e => e.id === exId);
     }
-    
     if (foundEx) {
         exerciseName = foundEx.name;
         isCardio = foundEx.type === 'cardio';
     }
-
     let bestWeight = 0;
-    
     logs.forEach(l => {
         if (!isCardio) {
             totalVolume += l.weight * l.reps;
         } else {
-             totalVolume += l.weight; // km
+             totalVolume += l.weight; 
         }
-
         if (l.weight > bestWeight) bestWeight = l.weight;
     });
-
-    // PR Logic: Check if bestWeight > max of all PREVIOUS dates
     const prevHistory = (fullHistory[exId] as HistoryLog[]) || [];
     const historicalLogs = prevHistory.filter(h => h.date !== today);
     const historicalBest = historicalLogs.reduce((max, h) => h.weight > max ? h.weight : max, 0);
-
     const isPR = !isCardio && bestWeight > historicalBest && historicalBest > 0;
-
     exercisesSummary.push({
         name: exerciseName,
         sets: logs.length,
@@ -846,18 +637,11 @@ export const getSessionSummary = (session: SessionData): ReceiptData => {
         isCardio
     });
   });
-
   const quotes = [
-      "Light weight, baby!",
-      "Yeah buddy!",
-      "Ain't nothing but a peanut.",
-      "Go hard or go home.",
-      "Pain is weakness leaving the body.",
-      "Discipline equals freedom.",
-      "One more rep.",
+      "Light weight, baby!", "Yeah buddy!", "Ain't nothing but a peanut.", "Go hard or go home.",
+      "Pain is weakness leaving the body.", "Discipline equals freedom.", "One more rep.",
       "The only bad workout is the one that didn't happen."
   ];
-
   return {
       date: dateStr,
       duration: durationStr,
@@ -869,63 +653,30 @@ export const getSessionSummary = (session: SessionData): ReceiptData => {
 
 export const getProgressionRecommendation = (exercise: Exercise): CoachRecommendation => {
     const history = getExerciseHistory(exercise.id);
-    
     if (!history || !history.lastSession) {
-        return {
-            type: 'BASELINE',
-            targetWeight: 0,
-            targetReps: exercise.reps,
-            reason: "Establish baseline."
-        };
+        return { type: 'BASELINE', targetWeight: 0, targetReps: exercise.reps, reason: "Establish baseline." };
     }
-
     const lastTop = history.lastSession.topSet;
     const repMatch = exercise.reps.match(/(\d+)/);
     const targetRepsInt = repMatch ? parseInt(repMatch[0]) : 10;
-
     if (lastTop.rpe && lastTop.rpe <= 7) {
-        return {
-            type: 'INCREASE',
-            targetWeight: lastTop.weight + 2.5,
-            targetReps: exercise.reps,
-            reason: `Last session was RPE ${lastTop.rpe} (Easy). Time to add weight.`
-        };
+        return { type: 'INCREASE', targetWeight: lastTop.weight + 2.5, targetReps: exercise.reps, reason: `Last session was RPE ${lastTop.rpe} (Easy). Time to add weight.` };
     }
-
     if (lastTop.reps >= targetRepsInt + 2) {
-         return {
-            type: 'INCREASE',
-            targetWeight: lastTop.weight + 2.5,
-            targetReps: exercise.reps,
-            reason: `You exceeded the rep target (${lastTop.reps} vs ${targetRepsInt}). Level up.`
-        };
+         return { type: 'INCREASE', targetWeight: lastTop.weight + 2.5, targetReps: exercise.reps, reason: `You exceeded the rep target (${lastTop.reps} vs ${targetRepsInt}). Level up.` };
     }
-
     if ((lastTop.rpe && lastTop.rpe >= 9.5 && lastTop.reps < targetRepsInt) || lastTop.reps < targetRepsInt - 2) {
-        return {
-            type: 'DECREASE', 
-            targetWeight: Math.max(0, lastTop.weight - 2.5),
-            targetReps: exercise.reps,
-            reason: "Hit failure early last time. Pull back slightly to recover form."
-        };
+        return { type: 'DECREASE', targetWeight: Math.max(0, lastTop.weight - 2.5), targetReps: exercise.reps, reason: "Hit failure early last time. Pull back slightly to recover form." };
     }
-
-    return {
-        type: 'MAINTAIN',
-        targetWeight: lastTop.weight,
-        targetReps: exercise.reps,
-        reason: "Good intensity. Consolidate gains at this weight."
-    };
+    return { type: 'MAINTAIN', targetWeight: lastTop.weight, targetReps: exercise.reps, reason: "Good intensity. Consolidate gains at this weight." };
 };
 
 export const analyzeSetPerformance = (exercise: Exercise, weight: number, reps: number): string => {
     const repMatch = exercise.reps.match(/(\d+)/);
     const targetRepsInt = repMatch ? parseInt(repMatch[0]) : 10;
-    
     if (reps >= targetRepsInt + 4) return "Way too light! Add weight immediately.";
     if (reps >= targetRepsInt + 2) return "Strong! You can handle more weight.";
     if (reps >= targetRepsInt) return "Target hit. Good job.";
     if (reps < targetRepsInt - 3) return "Struggling? Rest longer or drop weight.";
-    
     return "Solid effort.";
 };

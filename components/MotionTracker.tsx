@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Pause, Volume2, VolumeX, Wind, RotateCcw, Smartphone, Waves, Target, CheckCircle2, AlertTriangle, Gamepad2, Activity } from 'lucide-react';
-import { Exercise, PacerPhase } from '../types';
-import { MotionProcessor, Position, MotionEvent, MotionPhase } from '../services/MotionProcessor';
+import { X, Play, Pause, Volume2, VolumeX, Smartphone, Waves, Target, CheckCircle2, AlertTriangle, Gamepad2, Activity, ZapOff, CheckCircle } from 'lucide-react';
+import { Exercise } from '../types';
+import { MotionProcessor, Position, MotionEvent } from '../services/MotionProcessor';
+import { getCalibration, saveCalibration } from '../services/storageService';
 import GamePacer from './GamePacer';
 
 interface Props {
@@ -17,9 +18,11 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   const [isPaused, setIsPaused] = useState(false);
   const [reps, setReps] = useState(0);
   const [processorEvent, setProcessorEvent] = useState<MotionEvent | null>(null);
-  const [phonePosition, setPhonePosition] = useState<Position>('HAND');
-  const [isMutedState, setIsMutedState] = useState(false);
-  const [isHapticsEnabledState, setIsHapticsEnabledState] = useState(true);
+  
+  // Settings
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVibrationOff, setIsVibrationOff] = useState(false);
+  const [isManualMode, setIsManualMode] = useState(false);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   
   // Calibration States
@@ -28,29 +31,42 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
 
   // Modes
   const [mode, setMode] = useState<'STANDARD' | 'GAME'>('STANDARD');
-  const [useSensors, setUseSensors] = useState(true);
 
   // --- REFS ---
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const processorRef = useRef<MotionProcessor | null>(null);
   const isMutedRef = useRef(false);
-  const isHapticsEnabledRef = useRef(true);
+  const isVibrationOffRef = useRef(false);
 
   // --- INIT ---
   useEffect(() => {
     if ('speechSynthesis' in window) synthRef.current = window.speechSynthesis;
     
-    // Auto-detect position based on exercise
-    if (exercise.targetGroup === 'Legs') setPhonePosition('POCKET');
+    // Auto-detect existing calibration
+    const savedCal = getCalibration(exercise.id);
+    if (savedCal) {
+        setCalibState('DONE'); // Skip calibration if known
+    }
 
     return () => {
-        if (synthRef.current) synthRef.current.cancel();
-        window.removeEventListener('deviceorientation', handleOrientation);
+        cleanup();
     };
   }, []);
 
+  // Update refs when state changes for access inside callbacks
+  useEffect(() => {
+      isMutedRef.current = isMuted;
+      isVibrationOffRef.current = isVibrationOff;
+  }, [isMuted, isVibrationOff]);
+
+  const cleanup = () => {
+      if (synthRef.current) synthRef.current.cancel();
+      if (processorRef.current) processorRef.current.cleanup();
+      window.removeEventListener('deviceorientation', handleOrientation);
+  };
+
   const handleOrientation = (event: DeviceOrientationEvent) => {
-    if (processorRef.current && !isPaused && useSensors) {
+    if (processorRef.current && !isPaused && !isManualMode) {
       processorRef.current.process(event.alpha, event.beta, event.gamma);
     }
   };
@@ -61,29 +77,35 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
         const response = await (DeviceOrientationEvent as any).requestPermission();
         if (response === 'granted') {
           setPermissionState('granted');
-          initProcessor();
+          initProcessor(false);
         } else {
           setPermissionState('denied');
+          // Auto fallback to manual mode if denied
+          setIsManualMode(true);
+          initProcessor(true);
         }
       } catch (e) {
         console.error(e);
+        // Fallback
+        setIsManualMode(true);
+        initProcessor(true);
       }
     } else {
       setPermissionState('granted');
-      initProcessor();
+      initProcessor(false);
     }
   };
 
-  const initProcessor = () => {
+  const initProcessor = (manual: boolean) => {
+    const savedCal = getCalibration(exercise.id);
+    
     processorRef.current = new MotionProcessor(
       exercise,
-      phonePosition,
       (event) => {
         setProcessorEvent(event);
         
         // Voice Feedback
         if (event.feedback && event.feedbackType !== 'WARNING') {
-             // Only speak important cues, not every frame
              speak(event.feedback);
         }
 
@@ -97,10 +119,22 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
         if (event.feedbackType === 'TOO_FAST' || event.feedbackType === 'TOO_SLOW') {
             triggerHaptic([200]);
         }
-      }
+      },
+      savedCal
     );
 
-    window.addEventListener('deviceorientation', handleOrientation);
+    if (manual) {
+        setCalibState('DONE'); // No calibration needed for manual
+        processorRef.current.setManualMode(true);
+    } else {
+        window.addEventListener('deviceorientation', handleOrientation);
+    }
+  };
+
+  const handleManualStart = () => {
+      setIsManualMode(true);
+      setPermissionState('granted'); // Bypass screen
+      initProcessor(true);
   };
 
   // --- CALIBRATION LOGIC ---
@@ -126,7 +160,6 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   const beginRecording = () => {
       setCalibState('RECORDING');
       if (processorRef.current) processorRef.current.startCalibrationRecording();
-      speak("Move now. Full range.");
   };
 
   const finishCalibration = () => {
@@ -134,7 +167,12 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           const success = processorRef.current.finishCalibration();
           if (success) {
               setCalibState('DONE');
-              speak("Calibrated. Begin Set.");
+              speak("Calibrated.");
+              
+              // Save Calibration Data
+              const calData = processorRef.current.getCalibrationData();
+              calData.exerciseId = exercise.id;
+              saveCalibration(calData);
           } else {
               setCalibState('NONE'); // Retry
               speak("Retry.");
@@ -142,66 +180,57 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       }
   };
 
+  const resetCalibration = () => {
+      setCalibState('NONE');
+  };
+
   // --- AUDIO & HAPTICS ---
   const speak = (text: string) => {
     if (isMutedRef.current || !synthRef.current) return;
-    // Debounce speech slightly to avoid spam
     if (synthRef.current.speaking) return; 
     
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.1; // Slightly faster
+    u.rate = 1.1; 
     synthRef.current.speak(u);
   };
 
   const triggerHaptic = (pattern: number[]) => {
-    if (!isHapticsEnabledRef.current || !navigator.vibrate) return;
+    if (isVibrationOffRef.current || !navigator.vibrate) return;
     navigator.vibrate(pattern);
   };
 
-  const toggleMute = () => {
-    isMutedRef.current = !isMutedRef.current;
-    setIsMutedState(isMutedRef.current);
-  };
-
-  const toggleHaptics = () => {
-    isHapticsEnabledRef.current = !isHapticsEnabledRef.current;
-    setIsHapticsEnabledState(isHapticsEnabledRef.current);
+  const handleClose = () => {
+      cleanup();
+      onClose();
   };
 
   // --- RENDER HELPERS ---
   const progress = processorEvent?.progress || 0;
   const phase = processorEvent?.phase || 'IDLE';
   const feedbackMsg = processorEvent?.feedback;
+  const targetPos = exercise.targetGroup === 'Legs' ? 'Pocket' : 'Armband / Hand';
 
   // -- PERMISSION SCREEN --
-  if (permissionState === 'prompt' && useSensors) {
+  if (permissionState === 'prompt' && !isManualMode) {
     return (
       <div className="fixed inset-0 z-[60] bg-gym-900 flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
         <Smartphone size={64} className="text-gym-accent mb-6 animate-bounce" />
         <h2 className="text-3xl font-black text-white mb-4">Motion Guard</h2>
-        <p className="text-gray-400 mb-8">Mount phone to body for rep counting & tempo policing.</p>
         
-        <div className="w-full bg-gym-800 p-4 rounded-2xl border border-gym-700 mb-8">
-          <p className="text-[10px] text-gray-500 uppercase font-bold mb-4">Where is your phone?</p>
-          <div className="flex gap-2">
-            <button onClick={() => setPhonePosition('HAND')} className={`flex-1 py-4 rounded-xl border font-bold ${phonePosition === 'HAND' ? 'bg-gym-accent text-white' : 'bg-gym-900 text-gray-500'}`}>Hand</button>
-            <button onClick={() => setPhonePosition('POCKET')} className={`flex-1 py-4 rounded-xl border font-bold ${phonePosition === 'POCKET' ? 'bg-gym-accent text-white' : 'bg-gym-900 text-gray-500'}`}>Pocket</button>
-          </div>
+        <div className="bg-gym-800 p-4 rounded-xl border border-gym-700 mb-6 text-left w-full">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-2">Instructions</p>
+            <ul className="text-sm text-gray-300 space-y-2 list-disc list-inside">
+                <li>Mount phone: <strong>{targetPos}</strong></li>
+                <li>We track your <strong>Tempo</strong> & <strong>ROM</strong>.</li>
+                <li>Keeps you honest on reps.</li>
+            </ul>
         </div>
 
         <button onClick={requestPermission} className="w-full py-5 bg-white text-gym-900 font-black rounded-2xl shadow-xl mb-4">START SENSORS</button>
-        <button onClick={() => { setUseSensors(false); setPermissionState('granted'); }} className="text-gray-500 font-bold hover:text-white">Or Use Manual Pacer (No Sensors)</button>
+        <button onClick={handleManualStart} className="text-gray-500 font-bold hover:text-white">Use Visual Pacer (No Sensors)</button>
         <button onClick={onClose} className="mt-6 text-gray-500 text-xs">Cancel</button>
       </div>
     );
-  }
-
-  // -- MANUAL MODE (If sensors disabled) --
-  if (!useSensors) {
-      // Simple manual game pacer without sensor input logic
-      // TODO: Implementation for manual mode fallback can be added here
-      // For now, render standard with auto-progress for visualization?
-      // Just reuse GamePacer with simulated progress?
   }
 
   return (
@@ -210,12 +239,23 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       <div className="p-4 flex justify-between items-center border-b border-gym-700 bg-gym-800">
         <div>
           <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
-          <p className="text-xs text-gym-accent">{mode === 'GAME' ? 'Interactive Pacer' : 'Standard Pacer'}</p>
+          <p className="text-xs text-gym-accent flex items-center gap-1">
+              {isManualMode ? 'Visual Timer Mode' : 'Sensor Active'} 
+              {isManualMode && <Activity size={10}/>}
+          </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button onClick={() => setMode(mode === 'GAME' ? 'STANDARD' : 'GAME')} className="p-2 bg-gym-700 rounded-full text-white">{mode === 'GAME' ? <Activity size={20}/> : <Gamepad2 size={20}/>}</button>
-          <button onClick={toggleMute} className={`p-2 rounded-full ${!isMutedState ? 'text-white bg-gym-700' : 'text-gray-600'}`}>{isMutedState ? <VolumeX size={20}/> : <Volume2 size={20}/>}</button>
-          <button onClick={onClose} className="p-2 bg-gym-700 rounded-full text-white"><X size={20}/></button>
+          
+          <button onClick={() => setIsVibrationOff(!isVibrationOff)} className={`p-2 rounded-full ${isVibrationOff ? 'text-gray-500 bg-gym-800' : 'text-white bg-gym-700'}`}>
+              {isVibrationOff ? <ZapOff size={20}/> : <Waves size={20}/>}
+          </button>
+          
+          <button onClick={() => setIsMuted(!isMuted)} className={`p-2 rounded-full ${isMuted ? 'text-gray-500 bg-gym-800' : 'text-white bg-gym-700'}`}>
+              {isMuted ? <VolumeX size={20}/> : <Volume2 size={20}/>}
+          </button>
+          
+          <button onClick={handleClose} className="p-2 bg-gym-700 rounded-full text-white"><X size={20}/></button>
         </div>
       </div>
 
@@ -228,23 +268,31 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
             {calibState === 'NONE' && (
                 <>
                     <Target size={64} className="text-gray-600 mx-auto mb-6" />
-                    <h2 className="text-2xl font-black text-white mb-4">Calibration Required</h2>
-                    <p className="text-gray-400 mb-8 text-sm">Get into your starting position.</p>
-                    <button onClick={startCalibrationSequence} className="w-full py-4 bg-gym-accent text-white font-bold rounded-xl shadow-lg">Start (3s Delay)</button>
+                    <h2 className="text-2xl font-black text-white mb-4">Calibration</h2>
+                    <div className="bg-gym-800 p-4 rounded-xl mb-6 text-left">
+                        <p className="text-xs text-gray-400 uppercase font-bold mb-2">Steps:</p>
+                        <ol className="text-sm text-gray-300 list-decimal list-inside space-y-1">
+                            <li>Get into starting position.</li>
+                            <li>Wait for countdown.</li>
+                            <li>Perform <strong>ONE PERFECT REP</strong>.</li>
+                            <li>Full Range of Motion.</li>
+                        </ol>
+                    </div>
+                    <button onClick={startCalibrationSequence} className="w-full py-4 bg-gym-accent text-white font-bold rounded-xl shadow-lg">Start Calibration</button>
                 </>
             )}
             {calibState === 'COUNTDOWN' && (
                 <>
                     <h1 className="text-9xl font-black text-white mb-4">{calibCount}</h1>
-                    <p className="text-gym-accent font-bold uppercase animate-pulse">Get Ready...</p>
+                    <p className="text-gym-accent font-bold uppercase animate-pulse">{feedbackMsg || "Get Ready..."}</p>
                 </>
             )}
             {calibState === 'RECORDING' && (
                 <>
                     <div className="w-32 h-32 rounded-full border-4 border-dashed border-red-500 animate-spin mx-auto mb-6"></div>
-                    <h3 className="text-2xl font-bold text-white mb-2">Perform 1 Rep</h3>
-                    <p className="text-gray-400 mb-8 text-sm">Full Range: Start &rarr; End &rarr; Start</p>
-                    <button onClick={finishCalibration} className="w-full py-4 bg-red-600 text-white font-bold rounded-xl shadow-lg">Done Moving</button>
+                    <h3 className="text-2xl font-bold text-white mb-2">Moving...</h3>
+                    <p className="text-gray-400 mb-8 text-sm">{feedbackMsg || "Perform 1 Full Rep"}</p>
+                    <button onClick={finishCalibration} className="w-full py-4 bg-red-600 text-white font-bold rounded-xl shadow-lg">Finish Rep</button>
                 </>
             )}
           </div>
@@ -280,7 +328,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                             {Math.round(progress * 100)}<span className="text-2xl text-gym-accent">%</span>
                             </h2>
                             <div className="mt-4 px-4 py-1 bg-gym-900 border border-gym-700 rounded-full text-xs font-bold text-gray-300">
-                            {phase}
+                            {phase.replace('_', ' ')}
                             </div>
                         </div>
                         {/* Progress Ring */}
@@ -291,7 +339,15 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                 )}
             </div>
 
-            <div className="mt-8 flex items-center justify-center gap-8">
+            <div className="mt-8 flex items-center justify-center gap-4">
+               {!isManualMode && (
+                   <button 
+                     onClick={resetCalibration}
+                     className="px-4 py-2 bg-gym-800 rounded-lg text-xs font-bold text-gray-400 border border-gym-700"
+                   >
+                       Recalibrate
+                   </button>
+               )}
                <button 
                  onClick={() => { setIsPaused(!isPaused); speak(isPaused ? "Resuming" : "Paused"); }}
                  className={`w-20 h-20 rounded-full flex items-center justify-center border-4 ${isPaused ? 'bg-gym-success border-white' : 'bg-gym-800 border-gym-700'} text-white shadow-xl transition-all active:scale-95`}
@@ -311,8 +367,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
             {reps} <span className="text-xl text-gray-500 font-medium">/ {targetReps}</span>
           </p>
         </div>
-        <button onClick={onClose} className="px-8 py-4 bg-white text-gym-900 font-black rounded-2xl shadow-xl active:scale-95 transition-transform">
-          FINISH SET
+        <button onClick={handleClose} className="px-8 py-4 bg-white text-gym-900 font-black rounded-2xl shadow-xl active:scale-95 transition-transform flex items-center gap-2">
+          <CheckCircle size={20} /> FINISH SET
         </button>
       </div>
     </div>

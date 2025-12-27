@@ -14,7 +14,6 @@ const GamePacer: React.FC<Props> = ({ progress, phase, isPaused, pacerConfig }) 
   const scrollRef = useRef(0);
   
   // Calculate ideal path based on tempo
-  // We need to map time -> ideal progress (0 to 1)
   const getIdealProgress = (time: number) => {
       const totalDur = pacerConfig.phases.reduce((acc, p) => acc + p.duration, 0) * 1000;
       const t = time % totalDur;
@@ -26,14 +25,8 @@ const GamePacer: React.FC<Props> = ({ progress, phase, isPaused, pacerConfig }) 
               const localT = (t - elapsed) / dur;
               const action = p.action.toUpperCase();
               
-              // 0=Top/Start, 1=Bottom/Deep
-              // Eccentric (Down): 0 -> 1
-              if (['LOWER', 'DOWN', 'SIT'].some(k => action.includes(k))) return localT;
-              
-              // Concentric (Up): 1 -> 0
-              if (['UP', 'PRESS', 'DRIVE', 'PULL', 'CURL'].some(k => action.includes(k))) return 1 - localT;
-              
-              // Holds
+              if (['LOWER', 'DOWN', 'SIT', 'ECCENTRIC'].some(k => action.includes(k))) return localT;
+              if (['UP', 'PRESS', 'DRIVE', 'PULL', 'CURL', 'CONCENTRIC'].some(k => action.includes(k))) return 1 - localT;
               if (['STRETCH', 'BOTTOM'].some(k => action.includes(k))) return 1;
               return 0;
           }
@@ -49,8 +42,8 @@ const GamePacer: React.FC<Props> = ({ progress, phase, isPaused, pacerConfig }) 
     if (!ctx) return;
 
     let animId: number;
-    const startTime = Date.now();
-
+    // Don't restart start time on every render, but we need it relative to scroll
+    
     const draw = () => {
       if (!canvas) return;
       const width = canvas.width;
@@ -58,70 +51,104 @@ const GamePacer: React.FC<Props> = ({ progress, phase, isPaused, pacerConfig }) 
       const now = Date.now();
       
       if (!isPaused) {
-          scrollRef.current += 2; // Speed of scroll
+          scrollRef.current += 3; // Speed
       }
 
-      // Clear
-      ctx.fillStyle = '#1e293b'; // Gym-800
+      // 1. Background
+      ctx.fillStyle = '#0f172a'; // Gym-900
       ctx.fillRect(0, 0, width, height);
-
-      // Draw Tunnel (The Path)
+      
+      // Grid lines
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.lineWidth = 40; // Tunnel width
+      for(let i=0; i<height; i+=40) { ctx.moveTo(0,i); ctx.lineTo(width,i); }
+      ctx.stroke();
+
+      // 2. Draw Tunnel (Future Path)
+      ctx.beginPath();
+      ctx.lineWidth = 60; // Tunnel width
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#334155'; // Gym-700
+      ctx.strokeStyle = '#334155'; // Gym-700 (Tunnel Walls)
 
-      // Draw future path points
-      const pointsToDraw = 50; // How far ahead
-      const spacing = 10;
+      const pointsToDraw = 60; 
+      const spacing = 8;
       
+      // Draw path center line
+      const pathPoints: {x:number, y:number}[] = [];
+
       for (let i = 0; i < pointsToDraw; i++) {
-          const futureTime = now + (i * 100); // look ahead time
+          // Look ahead based on scroll speed simulation
+          // 1 pixel scroll ~= X ms? simple factor:
+          const futureTime = now + (i * 80); 
           const idealP = getIdealProgress(futureTime);
           
-          // Map progress 0-1 to Height
-          // 0 = Top of Screen (10% padding), 1 = Bottom (90% padding)
-          const y = (height * 0.1) + (idealP * (height * 0.8));
-          const x = (width * 0.2) + (i * spacing); // Player is at 20% width
+          const y = (height * 0.15) + (idealP * (height * 0.7)); // 15% padding
+          const x = (width * 0.15) + (i * spacing); 
+          
+          pathPoints.push({x, y});
           
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
       }
       ctx.stroke();
-
-      // Draw Target (Ghost)
-      const currentTargetP = getIdealProgress(now);
-      const targetY = (height * 0.1) + (currentTargetP * (height * 0.8));
-      const playerX = width * 0.2;
       
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; // Blue ghost
+      // Inner "Perfect Line"
       ctx.beginPath();
-      ctx.arc(playerX, targetY, 15, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#3b82f6'; // Gym-Accent
+      ctx.setLineDash([5, 5]);
+      pathPoints.forEach((p, i) => {
+          if (i===0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      // Draw Player
-      const playerY = (height * 0.1) + (progress * (height * 0.8));
+      // 3. Draw Player
+      const targetY = pathPoints[0].y;
+      const playerY = (height * 0.15) + (progress * (height * 0.7));
+      const playerX = width * 0.15;
       
-      // Determine color based on error
+      // Error calc
       const diff = Math.abs(playerY - targetY);
       let playerColor = '#4ade80'; // Green
-      if (diff > 40) playerColor = '#ef4444'; // Red (Fail)
-      else if (diff > 20) playerColor = '#facc15'; // Yellow (Warning)
+      let glowColor = 'rgba(74, 222, 128, 0.5)';
+      
+      if (diff > 50) { playerColor = '#ef4444'; glowColor = 'rgba(239, 68, 68, 0.5)'; } // Red
+      else if (diff > 25) { playerColor = '#facc15'; glowColor = 'rgba(250, 204, 21, 0.5)'; } // Yellow
 
-      ctx.fillStyle = playerColor;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = playerColor;
+      // Ghost (Target)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
       ctx.beginPath();
-      ctx.arc(playerX, playerY, 10, 0, Math.PI * 2);
+      ctx.arc(playerX, targetY, 20, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Real Player
+      ctx.fillStyle = playerColor;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = glowColor;
+      ctx.beginPath();
+      ctx.arc(playerX, playerY, 12, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
+      
+      // Connector line if far off
+      if (diff > 15) {
+          ctx.beginPath();
+          ctx.moveTo(playerX, playerY);
+          ctx.lineTo(playerX, targetY);
+          ctx.strokeStyle = playerColor;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+      }
 
       // Labels
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = '#64748b';
       ctx.font = '10px monospace';
-      ctx.fillText("TOP / START", 5, 15);
-      ctx.fillText("BOTTOM / DEEP", 5, height - 5);
+      ctx.fillText("TOP", 5, 20);
+      ctx.fillText("BOTTOM", 5, height - 10);
 
       animId = requestAnimationFrame(draw);
     };
@@ -131,11 +158,13 @@ const GamePacer: React.FC<Props> = ({ progress, phase, isPaused, pacerConfig }) 
   }, [progress, isPaused, pacerConfig]);
 
   return (
-    <div className="relative w-full h-64 rounded-xl overflow-hidden border border-gym-600 shadow-inner">
+    <div className="relative w-full h-64 rounded-xl overflow-hidden border border-gym-600 shadow-inner bg-gym-900">
        <canvas ref={canvasRef} width={350} height={256} className="w-full h-full" />
-       {/* Overlay Text */}
-       <div className="absolute top-2 right-2 text-xs font-bold text-white bg-black/50 px-2 py-1 rounded">
-           GAME MODE
+       
+       <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+           <div className="text-[10px] font-bold text-white bg-black/50 px-2 py-1 rounded border border-white/10">
+               STAY ON THE LINE
+           </div>
        </div>
     </div>
   );

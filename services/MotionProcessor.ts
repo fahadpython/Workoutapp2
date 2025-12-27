@@ -1,5 +1,5 @@
 
-import { Exercise, MotionType } from '../types';
+import { Exercise, MotionType, MotionCalibration } from '../types';
 
 export type Position = 'POCKET' | 'HAND' | 'CHEST';
 export type MotionPhase = 'IDLE' | 'ECCENTRIC' | 'BOTTOM_HOLD' | 'CONCENTRIC' | 'TOP_HOLD' | 'CALIB_COUNTDOWN' | 'CALIB_RECORDING';
@@ -19,7 +19,7 @@ export interface MotionEvent {
   repCount: number;
   feedback?: string;
   feedbackType?: FeedbackType;
-  rawDebug?: string;
+  debug?: string;
 }
 
 export class MotionProcessor {
@@ -28,16 +28,15 @@ export class MotionProcessor {
   private tempo: TempoConfig;
   private motionType: MotionType;
   private exerciseName: string;
+  private isManualMode: boolean = false;
 
   // State
   private currentPhase: MotionPhase = 'IDLE';
   private lastPhaseChangeTime: number = 0;
   private repCount: number = 0;
-  private repStartTime: number = 0;
   
   // Rep Logic
   private hasReachedBottom: boolean = false;
-  private hasReachedTop: boolean = false;
   
   // Calibration (Range of Motion)
   private minRawValue: number = Infinity;
@@ -45,40 +44,144 @@ export class MotionProcessor {
   private calibratedMin: number = 0;
   private calibratedMax: number = 0;
   private isCalibrated: boolean = false;
-  private calibrationDirection: 'NORMAL' | 'INVERTED' = 'NORMAL'; // Normal = Increasing Value goes DOWN
+  private calibrationDirection: 'NORMAL' | 'INVERTED' = 'NORMAL'; 
+  
+  // Start Position Logic
+  private startsAtTop: boolean = true; // True = Lower first (Bench), False = Lift first (Curl)
 
   // Smoothing
   private lastSmoothedValue: number = 0;
-  private velocity: number = 0; 
-  private smoothingFactor: number = 0.15; // Increased smoothing
+  private smoothingFactor: number = 0.15; 
+  private velocity: number = 0;
 
   // Fatigue Management
-  private fatigueFactor: number = 0; // Increases by 0.05 per rep
+  private fatigueFactor: number = 0; 
 
   // Callbacks
   private onUpdate: (event: MotionEvent) => void;
+  private manualInterval: any = null;
 
   constructor(
     exercise: Exercise, 
-    position: Position, 
-    onUpdate: (event: MotionEvent) => void
+    onUpdate: (event: MotionEvent) => void,
+    savedCalibration: MotionCalibration | null
   ) {
     this.exerciseName = exercise.name.toLowerCase();
     this.motionType = exercise.motionType || 'press';
-    this.position = position;
+    this.position = exercise.targetGroup === 'Legs' ? 'POCKET' : 'HAND';
     this.onUpdate = onUpdate;
     
     // Parse Tempo
     const phases = exercise.pacer.phases;
     this.tempo = {
-      eccentric: phases.find(p => ['LOWER', 'DOWN', 'OPEN'].some(k => p.action.includes(k)))?.duration || 3,
-      bottom: phases.find(p => ['STRETCH', 'HOLD', 'BOTTOM'].some(k => p.action.includes(k)))?.duration || 1,
-      concentric: phases.find(p => ['PRESS', 'PULL', 'UP', 'DRIVE', 'CURL'].some(k => p.action.includes(k)))?.duration || 1.5,
+      eccentric: phases.find(p => ['LOWER', 'DOWN', 'OPEN', 'RELEASE'].some(k => p.action.includes(k)))?.duration || 3,
+      bottom: phases.find(p => ['STRETCH', 'HOLD', 'BOTTOM', 'SQUEEZE', 'PAUSE'].some(k => p.action.includes(k)))?.duration || 1,
+      concentric: phases.find(p => ['PRESS', 'PULL', 'UP', 'DRIVE', 'CURL', 'RAISE'].some(k => p.action.includes(k)))?.duration || 1.5,
       top: 1
     };
+
+    // Determine Start Position based on Phase Order
+    // If first phase is LOWER -> Starts at TOP (Bench, Squat)
+    // If first phase is PULL/CURL -> Starts at BOTTOM (Row, Curl)
+    const firstAction = phases[0]?.action || '';
+    if (['PRESS', 'PULL', 'UP', 'DRIVE', 'CURL', 'RAISE'].some(k => firstAction.includes(k))) {
+        this.startsAtTop = false; // Must lift first
+    } else {
+        this.startsAtTop = true; // Must lower first
+    }
+
+    // Load Calibration if exists
+    if (savedCalibration) {
+        this.calibratedMin = savedCalibration.calibratedMin;
+        this.calibratedMax = savedCalibration.calibratedMax;
+        this.calibrationDirection = savedCalibration.calibrationDirection;
+        this.isCalibrated = true;
+        this.minRawValue = this.calibratedMin; // Initialize running min/max
+        this.maxRawValue = this.calibratedMax;
+    }
+  }
+
+  // --- PUBLIC METHODS ---
+
+  public cleanup() {
+      if (this.manualInterval) clearInterval(this.manualInterval);
+  }
+
+  public setManualMode(enabled: boolean) {
+      this.isManualMode = enabled;
+      if (enabled) {
+          this.isCalibrated = true; // Bypass calibration
+          this.startManualLoop();
+      } else {
+          this.cleanup();
+      }
+  }
+
+  public getCalibrationData(): MotionCalibration {
+      return {
+          exerciseId: '', // Filled by consumer
+          calibratedMin: this.calibratedMin,
+          calibratedMax: this.calibratedMax,
+          calibrationDirection: this.calibrationDirection,
+          confidenceScore: 100,
+          lastUpdated: Date.now()
+      };
+  }
+
+  public startCalibrationCountdown() {
+    this.currentPhase = 'CALIB_COUNTDOWN';
+    this.repCount = 0;
+    
+    // Provide explicit instruction based on start pos
+    const startMsg = this.startsAtTop 
+        ? "Hold weight at TOP (Lockout)" 
+        : "Hold weight at BOTTOM (Stretch)";
+    
+    this.emitState(this.startsAtTop ? 0 : 0, startMsg, 'WARNING');
+  }
+
+  public startCalibrationRecording() {
+    this.currentPhase = 'CALIB_RECORDING';
+    // Don't reset min/max here if we want to support re-calibration refinement
+    // But for a hard reset calibration:
+    this.minRawValue = Infinity;
+    this.maxRawValue = -Infinity;
+    
+    const moveMsg = this.startsAtTop
+        ? "Lower slowly... then Press up"
+        : "Lift up... then Lower slowly";
+
+    this.emitState(0, moveMsg, 'WARNING');
+  }
+
+  public finishCalibration(): boolean {
+    const range = this.maxRawValue - this.minRawValue;
+    if (range < 5) { // Very permissive threshold
+        this.emitState(0, "Movement too small. Try again.", "WARNING");
+        return false;
+    }
+
+    // Determine Direction automatically based on sensor heuristic
+    if (this.position === 'POCKET') {
+        this.calibrationDirection = 'INVERTED'; 
+    } else {
+        // For Hand:
+        // If curl: Up = High Beta. Down = Low Beta.
+        // If press: Up = High Beta? 
+        // Heuristic: Just assume NORMAL for hand unless proved otherwise
+        this.calibrationDirection = 'NORMAL'; 
+    }
+
+    this.calibratedMin = this.minRawValue;
+    this.calibratedMax = this.maxRawValue;
+    this.isCalibrated = true;
+    this.currentPhase = 'IDLE';
+    this.emitState(0, "Ready. Go!", "GOOD");
+    return true;
   }
 
   public process(alpha: number | null, beta: number | null, gamma: number | null) {
+    if (this.isManualMode) return;
     if (alpha === null || beta === null || gamma === null) return;
 
     // 1. Get Axis
@@ -89,77 +192,38 @@ export class MotionProcessor {
     this.velocity = smoothedValue - this.lastSmoothedValue;
     this.lastSmoothedValue = smoothedValue;
 
-    // 3. Logic Branch
+    // 3. Update Running Min/Max (ML Learning during set)
+    // We allow the range to expand slightly if user goes deeper
+    if (this.currentPhase !== 'CALIB_COUNTDOWN') {
+        if (smoothedValue < this.minRawValue) this.minRawValue = smoothedValue;
+        if (smoothedValue > this.maxRawValue) this.maxRawValue = smoothedValue;
+        
+        // Dynamic Adaptation: If saved calibration was too small, expand it on the fly
+        if (this.isCalibrated) {
+             if (smoothedValue < this.calibratedMin) this.calibratedMin = smoothedValue;
+             if (smoothedValue > this.calibratedMax) this.calibratedMax = smoothedValue;
+        }
+    }
+
+    // 4. Logic Branch
     if (this.currentPhase === 'CALIB_RECORDING') {
-      this.handleCalibrationRecording(smoothedValue);
+      // Just track min/max (handled above)
+      this.emitState(0.5, "Move full range...", 'WARNING');
     } else if (this.currentPhase !== 'CALIB_COUNTDOWN') {
       this.handleWorkoutLoop(smoothedValue);
     }
   }
 
-  public startCalibrationCountdown() {
-    this.currentPhase = 'CALIB_COUNTDOWN';
-    this.repCount = 0;
-    // Emit initial event to UI
-    this.emitState(0, "Get Ready...", 'WARNING');
-  }
-
-  public startCalibrationRecording() {
-    this.currentPhase = 'CALIB_RECORDING';
-    this.minRawValue = Infinity;
-    this.maxRawValue = -Infinity;
-    // Reset ROM
-    this.emitState(0, this.getStartCue(), 'WARNING');
-  }
-
-  public finishCalibration() {
-    // Add buffer
-    const range = this.maxRawValue - this.minRawValue;
-    if (range < 10) {
-        // Did not move enough
-        this.emitState(0, "Movement too small. Try again.", "WARNING");
-        return false;
-    }
-
-    // Determine Direction automatically
-    // If we assume user starts at TOP/START position
-    // For Squat (Pocket): Stand (90) -> Sit (0). Value Decreases.
-    // For Curl (Hand): Hang (-90) -> Curl (45). Value Increases.
-    
-    // We define: Progress 0 = Start Position, Progress 1 = Max Stretch/Contraction
-    // Logic: If the LAST recorded value is closer to MAX, then Start must be MIN (Normal).
-    // If LAST recorded value is closer to MIN, then Start must be MAX (Inverted).
-    // Actually, simple heuristic:
-    // Pocket/Squat: Decreasing = Down.
-    // Hand/Curl: Increasing = Up.
-    
-    if (this.position === 'POCKET') {
-        this.calibrationDirection = 'INVERTED'; // 90(Start) -> 0(End)
-    } else {
-        this.calibrationDirection = 'NORMAL'; // -90(Start) -> 90(End)
-    }
-
-    this.calibratedMin = this.minRawValue;
-    this.calibratedMax = this.maxRawValue;
-    this.isCalibrated = true;
-    this.currentPhase = 'IDLE';
-    this.hasReachedBottom = false;
-    this.hasReachedTop = true;
-    this.emitState(0, "Ready. Go!", "GOOD");
-    return true;
-  }
+  // --- INTERNAL LOGIC ---
 
   private getRelevantAxisValue(beta: number, gamma: number): number {
-    // Pocket: Beta (Tilt forward/back)
-    if (this.position === 'POCKET') return beta;
-    // Hand: Beta (Tilt of phone in hand)
-    return beta; 
+    return beta; // Beta (Tilt) is almost always the primary driver for gym motions
   }
 
   private getNormalizedProgress(rawValue: number): number {
     if (!this.isCalibrated) return 0;
 
-    const clamped = Math.max(Math.min(rawValue, this.maxRawValue), this.minRawValue);
+    const clamped = Math.max(Math.min(rawValue, this.calibratedMax), this.calibratedMin);
     let pct = (clamped - this.calibratedMin) / (this.calibratedMax - this.calibratedMin);
 
     if (this.calibrationDirection === 'INVERTED') {
@@ -168,111 +232,126 @@ export class MotionProcessor {
     return pct;
   }
 
-  private handleCalibrationRecording(val: number) {
-    if (val < this.minRawValue) this.minRawValue = val;
-    if (val > this.maxRawValue) this.maxRawValue = val;
-    
-    // Visualize raw movement range
-    // Since we don't know min/max yet, we just jitter or show raw
-    this.emitState(0.5, "Move full range...", 'WARNING');
+  private startManualLoop() {
+      // Manual Mode: Simulate a perfect rep loop based on tempo
+      this.currentPhase = 'IDLE';
+      this.transitionTo(this.startsAtTop ? 'ECCENTRIC' : 'CONCENTRIC');
+      
+      let startTime = Date.now();
+      
+      this.manualInterval = setInterval(() => {
+          const now = Date.now();
+          const phaseDuration = (now - this.lastPhaseChangeTime) / 1000;
+          let progress = 0;
+          let targetProgress = 0;
+
+          // Simple State Machine for Manual
+          switch(this.currentPhase) {
+              case 'ECCENTRIC':
+                  progress = Math.min(1, phaseDuration / this.tempo.eccentric);
+                  targetProgress = progress;
+                  if (progress >= 1) this.transitionTo('BOTTOM_HOLD');
+                  break;
+              case 'BOTTOM_HOLD':
+                  progress = 1;
+                  targetProgress = 1;
+                  if (phaseDuration >= this.tempo.bottom) this.transitionTo('CONCENTRIC');
+                  break;
+              case 'CONCENTRIC':
+                  progress = Math.max(0, 1 - (phaseDuration / this.tempo.concentric));
+                  targetProgress = progress;
+                  if (progress <= 0) {
+                      this.repCount++;
+                      this.transitionTo('TOP_HOLD', { type: 'GOOD', msg: `${this.repCount}` });
+                  }
+                  break;
+              case 'TOP_HOLD':
+                  progress = 0;
+                  targetProgress = 0;
+                  if (phaseDuration >= this.tempo.top) this.transitionTo('ECCENTRIC');
+                  break;
+          }
+
+          this.emitState(progress, this.getPhaseCue(this.currentPhase), 'PERFECT');
+      }, 50);
   }
 
   private handleWorkoutLoop(rawValue: number) {
     const progress = this.getNormalizedProgress(rawValue);
     const now = Date.now();
     const phaseDuration = (now - this.lastPhaseChangeTime) / 1000;
-
-    // --- FATIGUE COMPENSATION ---
-    // As reps increase, we allow slightly slower times without penalty
-    // Factor: +5% allowed time per rep after rep 5
     const fatigueMultiplier = this.repCount > 5 ? 1 + ((this.repCount - 5) * 0.05) : 1.0;
 
-    let targetProgress = 0; // For Ghost Pacer
+    // Determine Logic based on Exercise Type (Start Top vs Start Bottom)
+    // Standard (Bench): Idle -> Eccentric (Down) -> Bottom -> Concentric (Up)
+    // Inverted (Curl): Idle -> Concentric (Up) -> Top -> Eccentric (Down)
 
-    // --- STATE MACHINE ---
-    switch (this.currentPhase) {
-      case 'IDLE':
-      case 'TOP_HOLD':
-        targetProgress = 0;
-        // Start Eccentric if we move past 15% ROM
-        if (progress > 0.15) {
-          this.transitionTo('ECCENTRIC');
-          this.hasReachedBottom = false;
-        }
-        break;
-
-      case 'ECCENTRIC':
-        // Moving 0 -> 1
-        // Calculate Target Pacer Progress (Linear 0 to 1 over eccentric time)
-        targetProgress = Math.min(1, phaseDuration / (this.tempo.eccentric * fatigueMultiplier));
-        
-        // Speed Check
-        if (targetProgress < progress - 0.2) {
-             // You are ahead of target (Too Fast)
-             this.emitState(progress, "Too Fast! Resist.", 'TOO_FAST');
-        } else {
-             this.emitState(progress, this.getEccentricCue(), 'PERFECT');
-        }
-
-        // Transition
-        if (progress > 0.85) {
-          this.hasReachedBottom = true;
-          this.transitionTo('BOTTOM_HOLD');
-        }
-        break;
-
-      case 'BOTTOM_HOLD':
-        targetProgress = 1;
-        // Holding at 1
-        const requiredHold = this.tempo.bottom;
-        
-        if (progress < 0.80) {
-            // Moved up early?
-            if (phaseDuration < requiredHold * 0.5) {
-                // Bounced
-                this.emitState(progress, "Don't Bounce!", 'TOO_FAST');
-                this.transitionTo('CONCENTRIC');
-            } else {
-                this.transitionTo('CONCENTRIC');
-            }
-        } else {
-            // Still holding
-            if (phaseDuration > requiredHold + 1.0) {
-                 this.emitState(progress, "Power Up Now!", 'TOO_SLOW');
-            } else {
-                 this.emitState(progress, "Hold...", 'PERFECT');
-            }
-        }
-        break;
-
-      case 'CONCENTRIC':
-        // Moving 1 -> 0
-        targetProgress = Math.max(0, 1 - (phaseDuration / (this.tempo.concentric * fatigueMultiplier)));
-        
-        // Guidance
-        this.emitState(progress, this.getConcentricCue(), 'PERFECT');
-
-        // Transition
-        if (progress < 0.15) {
-            if (this.hasReachedBottom) {
-                this.repCount++;
-                this.hasReachedBottom = false;
-                this.transitionTo('TOP_HOLD', { type: 'GOOD', msg: `${this.repCount} Reps` });
-            } else {
-                // False rep (didn't hit bottom)
-                this.transitionTo('IDLE');
-            }
-        }
-        break;
+    if (this.startsAtTop) {
+        this.handleStandardLoop(progress, phaseDuration, fatigueMultiplier);
+    } else {
+        this.handleInvertedLoop(progress, phaseDuration, fatigueMultiplier);
     }
-    
-    // Add computed target to event for Game Mode
-    this.lastEvent = {
-        ...this.lastEvent,
-        progress,
-        targetProgress
-    };
-    this.onUpdate(this.lastEvent);
+  }
+
+  private handleStandardLoop(progress: number, phaseDuration: number, fatigue: number) {
+      // 0 = Top, 1 = Bottom
+      switch (this.currentPhase) {
+          case 'IDLE':
+          case 'TOP_HOLD':
+            if (progress > 0.15) this.transitionTo('ECCENTRIC');
+            break;
+          case 'ECCENTRIC': // Going 0 -> 1
+            const target = Math.min(1, phaseDuration / (this.tempo.eccentric * fatigue));
+            this.checkSpeed(progress, target, 0.2);
+            if (progress > 0.85) this.transitionTo('BOTTOM_HOLD');
+            break;
+          case 'BOTTOM_HOLD': // Holding at 1
+            if (progress < 0.80 && phaseDuration > 0.5) this.transitionTo('CONCENTRIC');
+            break;
+          case 'CONCENTRIC': // Going 1 -> 0
+            if (progress < 0.15) {
+                this.repCount++;
+                this.transitionTo('TOP_HOLD', { type: 'GOOD', msg: `${this.repCount}` });
+            }
+            break;
+      }
+      this.emitState(progress, this.getPhaseCue(this.currentPhase), this.lastEvent.feedbackType);
+  }
+
+  private handleInvertedLoop(progress: number, phaseDuration: number, fatigue: number) {
+      // 0 = Bottom (Start), 1 = Top (Peak)
+      switch (this.currentPhase) {
+          case 'IDLE':
+          case 'TOP_HOLD': // Actually Bottom in this context, confusing naming but "Rest" phase
+             if (progress > 0.15) this.transitionTo('CONCENTRIC');
+             break;
+          case 'CONCENTRIC': // Going 0 -> 1 (Lifting)
+             const target = Math.min(1, phaseDuration / (this.tempo.concentric * fatigue));
+             // Don't penalize fast concentric usually
+             if (progress > 0.85) this.transitionTo('BOTTOM_HOLD'); // Peak Hold
+             break;
+          case 'BOTTOM_HOLD': // Holding at 1 (Peak)
+             if (progress < 0.80 && phaseDuration > 0.5) this.transitionTo('ECCENTRIC');
+             break;
+          case 'ECCENTRIC': // Going 1 -> 0 (Lowering)
+             const eccTarget = Math.max(0, 1 - (phaseDuration / (this.tempo.eccentric * fatigue)));
+             // Speed check: If progress (real) is lower than target, we dropped too fast
+             if (progress < eccTarget - 0.2) this.lastEvent.feedbackType = 'TOO_FAST';
+             else this.lastEvent.feedbackType = 'PERFECT';
+
+             if (progress < 0.15) {
+                 this.repCount++;
+                 this.transitionTo('TOP_HOLD', { type: 'GOOD', msg: `${this.repCount}` });
+             }
+             break;
+      }
+      this.emitState(progress, this.getPhaseCue(this.currentPhase), this.lastEvent.feedbackType);
+  }
+
+  private checkSpeed(actual: number, target: number, tol: number) {
+      // Standard: target increases 0->1. If actual > target + tol, Too Fast.
+      if (actual > target + tol) this.lastEvent.feedbackType = 'TOO_FAST';
+      else this.lastEvent.feedbackType = 'PERFECT';
   }
 
   private lastEvent: MotionEvent = { phase: 'IDLE', progress: 0, targetProgress: 0, repCount: 0 };
@@ -281,7 +360,7 @@ export class MotionProcessor {
     this.currentPhase = newPhase;
     this.lastPhaseChangeTime = Date.now();
     if (feedback) {
-        this.emitState(0, feedback.msg, feedback.type); // progress gets overwritten in loop
+        this.emitState(this.lastEvent.progress, feedback.msg, feedback.type); 
     }
   }
 
@@ -289,33 +368,22 @@ export class MotionProcessor {
     this.lastEvent = {
       phase: this.currentPhase,
       progress,
-      targetProgress: 0, // Calculated in loop
+      targetProgress: 0, // Calculated by GamePacer usually, or could be passed here
       repCount: this.repCount,
       feedback: feedbackMsg,
-      feedbackType
+      feedbackType: feedbackType || this.lastEvent.feedbackType,
+      debug: `Raw: ${this.lastSmoothedValue.toFixed(0)}`
     };
     this.onUpdate(this.lastEvent);
   }
 
-  // --- CUE GENERATORS ---
-  private getStartCue() {
-      if (this.motionType === 'press' || this.motionType === 'squat') return "Start at TOP (Lockout)";
-      if (this.motionType === 'pull' || this.motionType === 'curl') return "Start at BOTTOM (Hang)";
-      return "Start at Resting Pos";
-  }
-
-  private getEccentricCue() {
-      if (this.motionType === 'press') return "Control Down...";
-      if (this.motionType === 'squat') return "Sit Back Slow...";
-      if (this.motionType === 'pull' || this.motionType === 'curl') return "Release Slowly...";
-      return "Slow...";
-  }
-
-  private getConcentricCue() {
-      if (this.motionType === 'press') return "DRIVE UP!";
-      if (this.motionType === 'squat') return "PUSH FLOOR!";
-      if (this.motionType === 'pull') return "PULL HARD!";
-      if (this.motionType === 'curl') return "SQUEEZE UP!";
-      return "Power!";
+  private getPhaseCue(phase: MotionPhase): string {
+      switch(phase) {
+          case 'ECCENTRIC': return "Control Down...";
+          case 'CONCENTRIC': return "Power!";
+          case 'BOTTOM_HOLD': return "Hold...";
+          case 'TOP_HOLD': return "Reset";
+          default: return "";
+      }
   }
 }
