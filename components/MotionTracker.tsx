@@ -1,8 +1,8 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, Pause, Volume2, VolumeX, Wind, RotateCcw, Smartphone, Waves } from 'lucide-react';
+import { X, Play, Pause, Volume2, VolumeX, Wind, RotateCcw, Smartphone, Waves, Target, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Exercise, PacerPhase } from '../types';
+import { MotionProcessor, Position, MotionEvent, MotionPhase } from '../services/MotionProcessor';
 
 interface Props {
   exercise: Exercise;
@@ -16,455 +16,259 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   const [isActive, setIsActive] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [reps, setReps] = useState(0);
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
-  const [phaseTimeLeft, setPhaseTimeLeft] = useState(0); // Seconds
+  const [processorEvent, setProcessorEvent] = useState<MotionEvent | null>(null);
+  const [phonePosition, setPhonePosition] = useState<Position>('HAND');
   const [isMutedState, setIsMutedState] = useState(false);
-  const [isHapticsEnabledState, setIsHapticsEnabledState] = useState(true); 
-  const [timerSeconds, setTimerSeconds] = useState(0); // For timed exercises
+  const [isHapticsEnabledState, setIsHapticsEnabledState] = useState(true);
+  const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied'>('prompt');
 
   // --- REFS ---
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const requestRef = useRef<number>(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const phaseStartTimeRef = useRef(0);
-  
-  // Use refs for mute/haptic state to avoid stale closures in gameLoop
+  const processorRef = useRef<MotionProcessor | null>(null);
   const isMutedRef = useRef(false);
   const isHapticsEnabledRef = useRef(true);
-  
-  // Mutable state for the loop to access without closures
-  const stateRef = useRef({ 
-      phaseIdx: 0, 
-      phaseDuration: 0,
-      isPaused: false 
-  });
-
-  const fullCleanup = () => {
-      cancelAnimationFrame(requestRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (synthRef.current) synthRef.current.cancel();
-      if (navigator.vibrate) navigator.vibrate(0);
-  };
 
   // --- INIT ---
   useEffect(() => {
     if ('speechSynthesis' in window) synthRef.current = window.speechSynthesis;
     
-    startCountdown();
+    // Auto-detect position based on exercise
+    if (exercise.targetGroup === 'Legs') setPhonePosition('POCKET');
 
     return () => {
-        fullCleanup();
+        if (synthRef.current) synthRef.current.cancel();
+        window.removeEventListener('deviceorientation', handleOrientation);
     };
   }, []);
 
-  const handleClose = () => {
-      fullCleanup();
-      onClose();
+  const handleOrientation = (event: DeviceOrientationEvent) => {
+    if (processorRef.current && !isPaused) {
+      processorRef.current.process(event.alpha, event.beta, event.gamma);
+    }
   };
 
-  const toggleMute = () => {
-      const newVal = !isMutedRef.current;
-      isMutedRef.current = newVal;
-      setIsMutedState(newVal);
-      if (newVal && synthRef.current) synthRef.current.cancel();
+  const requestPermission = async () => {
+    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      try {
+        const response = await (DeviceOrientationEvent as any).requestPermission();
+        if (response === 'granted') {
+          setPermissionState('granted');
+          initProcessor();
+        } else {
+          setPermissionState('denied');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      setPermissionState('granted');
+      initProcessor();
+    }
   };
 
-  const toggleHaptics = () => {
-      const newVal = !isHapticsEnabledRef.current;
-      isHapticsEnabledRef.current = newVal;
-      setIsHapticsEnabledState(newVal);
-      if (!newVal) navigator.vibrate(0);
-      else triggerHaptic([50]);
+  const initProcessor = () => {
+    processorRef.current = new MotionProcessor(
+      exercise,
+      phonePosition,
+      (event) => {
+        setProcessorEvent(event);
+        
+        // Audio/Haptic triggers on phase change
+        if (event.feedback && event.feedbackType) {
+          speak(event.feedback);
+          if (event.feedbackType === 'TOO_FAST') triggerHaptic([100, 50, 100]);
+        }
+
+        if (event.repCount > reps) {
+          setReps(event.repCount);
+          onRepCount(event.repCount);
+          speak(String(event.repCount));
+          triggerHaptic([100, 50, 100]);
+        }
+      }
+    );
+
+    window.addEventListener('deviceorientation', handleOrientation);
+    processorRef.current.startCalibration();
+    setIsActive(true);
   };
 
   // --- AUDIO & HAPTICS ---
-  const elongateWord = (text: string, duration: number) => {
-      // Only elongate if there's enough time
-      if (duration <= 1.2) return text;
-
-      const lower = text.toLowerCase();
-      
-      // Manual elongation mapping for realistic speech
-      if (lower.includes('control')) return "Con-trooool";
-      if (lower.includes('down')) return "Dooooown";
-      if (lower.includes('squeeze')) return "Squeeeeeeeze";
-      if (lower.includes('hold')) return "Hooooooold";
-      if (lower.includes('stretch')) return "Streeeeeetch";
-      if (lower.includes('release')) return "Re-leeeeease";
-      if (lower.includes('pull')) return "Puuuuuuull";
-      if (lower.includes('push')) return "Puuuuuuush";
-      if (lower.includes('lower')) return "Low-errrrr";
-      
-      return text;
-  };
-
-  const speak = (text: string, duration: number = 1.0) => {
-    if (isMutedRef.current || !synthRef.current || !text) return;
-    
-    // Always cancel previous speech to ensure tight timing
+  const speak = (text: string) => {
+    if (isMutedRef.current || !synthRef.current) return;
     synthRef.current.cancel();
-    
-    const stretchedText = elongateWord(text, duration);
-    const u = new SpeechSynthesisUtterance(stretchedText);
-    
-    // ADJUST RATE BASED ON DURATION
-    // For long eccentric phases (3s+), we want slow, calming speech.
-    // For explosive concentric phases (<1.5s), we want normal speed.
-    if (duration >= 3.0) {
-        u.rate = 0.6; // Very Slow
-    } else if (duration >= 2.0) {
-        u.rate = 0.8; // Slow
-    } else {
-        u.rate = 1.1; // Snappy
-    }
-    
-    u.pitch = 1.0;
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.0;
     synthRef.current.speak(u);
   };
 
-  const triggerHaptic = (pattern: number | number[]) => {
-      if (!isHapticsEnabledRef.current || !navigator.vibrate) return;
-      navigator.vibrate(0);
-      if (Array.isArray(pattern) && pattern.length === 0) return; // Silent
-      navigator.vibrate(pattern);
+  const triggerHaptic = (pattern: number[]) => {
+    if (!isHapticsEnabledRef.current || !navigator.vibrate) return;
+    navigator.vibrate(pattern);
   };
 
-  const getPhaseHapticPattern = (action: string, duration: number): number[] => {
-      const a = action.toUpperCase();
-      const ms = duration * 1000;
-
-      // 1. ISOMETRIC / STATIC (Hold/Stretch/Pause) -> SILENCE or very faint tick
-      if (['HOLD', 'STRETCH', 'PAUSE', 'WAIT'].some(k => a.includes(k))) {
-          return []; 
-      }
-
-      // 2. ECCENTRIC (Lowering/Returning) -> "TICKING CLOCK" / "HEARTBEAT"
-      // This helps user count the seconds down: Tick... Tick... Tick...
-      if (['LOWER', 'RELEASE', 'RETURN', 'DOWN', 'CONTROL', 'RESET'].some(k => a.includes(k))) {
-          const pattern: number[] = [];
-          // Create a tick every second
-          const ticks = Math.floor(duration);
-          for(let i=0; i<ticks; i++) {
-              pattern.push(50); // Short tick
-              pattern.push(950); // Wait 1s
-          }
-          return pattern;
-      }
-
-      // 3. CONCENTRIC (Explosive/Drive/Squeeze) -> STRONG BUZZ
-      // Continuous feedback for effort
-      if (['SQUEEZE', 'CONTRACT', 'PULL', 'PUSH', 'PRESS', 'DRIVE', 'UP', 'CURL', 'RAISE', 'CHOP'].some(k => a.includes(k))) {
-           return [ms > 1000 ? 600 : ms]; // Cap buzz at 600ms so it doesn't feel weird
-      }
-
-      return [100];
+  const toggleMute = () => {
+    isMutedRef.current = !isMutedRef.current;
+    setIsMutedState(isMutedRef.current);
   };
 
-  // --- LOGIC ---
-  const startCountdown = () => {
-      speak("Get Ready.", 1);
-      setTimeout(() => {
-          speak("3", 0.5); triggerHaptic(50);
-          setTimeout(() => {
-              speak("2", 0.5); triggerHaptic(50);
-              setTimeout(() => {
-                  speak("1", 0.5); triggerHaptic(50);
-                  setTimeout(() => {
-                      speak("Go!", 1); triggerHaptic([1000]); // Long buzz start
-                      setIsActive(true);
-                      
-                      if (exercise.isTimed) {
-                          startTimer();
-                      } else {
-                          startPacer();
-                      }
-                  }, 1000);
-              }, 1000);
-          }, 1000);
-      }, 1000);
+  const toggleHaptics = () => {
+    isHapticsEnabledRef.current = !isHapticsEnabledRef.current;
+    setIsHapticsEnabledState(isHapticsEnabledRef.current);
   };
 
-  // --- TIMED EXERCISE LOGIC ---
-  const startTimer = () => {
-      setIsPaused(false);
-      setTimerSeconds(0);
-      
-      timerRef.current = setInterval(() => {
-          setTimerSeconds(prev => prev + 1);
-      }, 1000);
-
-      startPacer();
-  };
-
-  const stopTimer = () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-  };
-
-  // --- PACER LOGIC ---
-  const startPacer = () => {
-    if (exercise.pacer.phases.length === 0) return;
-    
-    setIsPaused(false);
-    stateRef.current.isPaused = false;
-    
-    // Initialize first phase
-    runPhase(0);
-
-    // Start Animation Loop
-    cancelAnimationFrame(requestRef.current);
-    requestRef.current = requestAnimationFrame(gameLoop);
-  };
-
-  const runPhase = (idx: number) => {
-      const phases = exercise.pacer.phases;
-      const phase = phases[idx];
-      stateRef.current.phaseIdx = idx;
-      stateRef.current.phaseDuration = phase.duration * 1000;
-      
-      setCurrentPhaseIndex(idx);
-      phaseStartTimeRef.current = Date.now();
-
-      // Audio Cue
-      if (phase.voiceCue) speak(phase.voiceCue, phase.duration);
-      
-      // Haptic Cue
-      triggerHaptic(getPhaseHapticPattern(phase.action, phase.duration));
-  };
-
-  const gameLoop = () => {
-      if (stateRef.current.isPaused) return;
-
-      const now = Date.now();
-      const elapsed = now - phaseStartTimeRef.current;
-      const duration = stateRef.current.phaseDuration;
-      const remainingMs = duration - elapsed;
-      const remainingSec = Math.max(0, remainingMs / 1000);
-      
-      setPhaseTimeLeft(remainingSec);
-
-      // Phase Complete
-      if (remainingMs <= 0) {
-          const phases = exercise.pacer.phases;
-          const nextIdx = stateRef.current.phaseIdx + 1;
-
-          if (nextIdx >= phases.length) {
-              // REP COMPLETE (Only count if NOT timed)
-              if (!exercise.isTimed) {
-                  setReps(prev => {
-                      const n = prev + 1;
-                      onRepCount(n);
-                      // Speak the Rep Number audibly
-                      speak(String(n), 0.5);
-                      // Rep Complete: Success Triple-Beat
-                      triggerHaptic([100, 80, 100, 80, 300]); 
-                      return n;
-                  });
-              }
-              // Wait slightly before starting next rep so speech doesn't overlap immediately
-              setTimeout(() => runPhase(0), 100);
-          } else {
-              // NEXT PHASE
-              runPhase(nextIdx);
-          }
-      }
-
-      requestRef.current = requestAnimationFrame(gameLoop);
-  };
-
-  const togglePause = () => {
-      if (isPaused) {
-          // RESUME
-          setIsPaused(false);
-          stateRef.current.isPaused = false;
-          // Adjust start time so the jump doesn't occur
-          const duration = stateRef.current.phaseDuration;
-          const remainingMs = phaseTimeLeft * 1000;
-          phaseStartTimeRef.current = Date.now() - (duration - remainingMs);
-          
-          requestRef.current = requestAnimationFrame(gameLoop);
-          if (exercise.isTimed) startTimer();
-
-      } else {
-          // PAUSE
-          setIsPaused(true);
-          stateRef.current.isPaused = true;
-          cancelAnimationFrame(requestRef.current);
-          if (exercise.isTimed) stopTimer();
-          // Stop vibration on pause
-          triggerHaptic(0);
-      }
-  };
-
-  const resetPacer = () => {
-      setReps(0);
-      setTimerSeconds(0);
-      onRepCount(0);
-      runPhase(0);
-      if (isPaused) togglePause();
-  };
-
-  const handleFinish = () => {
-      // If timed, we use the timer value as the 'reps' (seconds)
-      if (exercise.isTimed) {
-          onRepCount(timerSeconds);
-      }
-      handleClose();
+  const handleCalibrationFinished = () => {
+    if (processorRef.current) {
+      processorRef.current.finishCalibration();
+      speak("Calibration complete. Start your set.");
+    }
   };
 
   // --- RENDER HELPERS ---
-  const currentPhase = exercise.pacer.phases[currentPhaseIndex] || { action: 'Ready', breathing: 'Hold', duration: 1, voiceCue: '' };
-  
-  const getPhaseColor = (p: PacerPhase) => {
-    switch (p.breathing) {
-        case 'Exhale': return 'text-gym-success border-gym-success shadow-[0_0_40px_rgba(16,185,129,0.3)]'; 
-        case 'Inhale': return 'text-blue-400 border-blue-400 shadow-[0_0_40px_rgba(96,165,250,0.3)]'; 
-        default: return 'text-yellow-400 border-yellow-400 shadow-[0_0_40px_rgba(250,204,21,0.3)]'; 
-    }
-  };
+  const progress = processorEvent?.progress || 0;
+  const phase = processorEvent?.phase || 'IDLE';
 
-  const getPhaseBg = (p: PacerPhase) => {
-    switch (p.breathing) {
-        case 'Exhale': return 'bg-gym-success/10'; 
-        case 'Inhale': return 'bg-blue-400/10'; 
-        default: return 'bg-yellow-400/10'; 
-    }
-  };
+  if (permissionState === 'prompt') {
+    return (
+      <div className="fixed inset-0 z-[60] bg-gym-900 flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
+        <Smartphone size={64} className="text-gym-accent mb-6 animate-bounce" />
+        <h2 className="text-3xl font-black text-white mb-4">Motion Guard</h2>
+        <p className="text-gray-400 mb-8">We use your phone's sensors to track your tempo and range of motion. For best results, keep the phone in the same spot.</p>
+        
+        <div className="w-full bg-gym-800 p-4 rounded-2xl border border-gym-700 mb-8">
+          <p className="text-[10px] text-gray-500 uppercase font-bold mb-4">Where is your phone?</p>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setPhonePosition('HAND')}
+              className={`flex-1 py-4 rounded-xl border font-bold transition-all ${phonePosition === 'HAND' ? 'bg-gym-accent border-blue-400 text-white shadow-lg shadow-blue-500/20' : 'bg-gym-900 border-gym-700 text-gray-500'}`}
+            >
+              Hand / Wrist
+            </button>
+            <button 
+              onClick={() => setPhonePosition('POCKET')}
+              className={`flex-1 py-4 rounded-xl border font-bold transition-all ${phonePosition === 'POCKET' ? 'bg-gym-accent border-blue-400 text-white shadow-lg shadow-blue-500/20' : 'bg-gym-900 border-gym-700 text-gray-500'}`}
+            >
+              Pocket
+            </button>
+          </div>
+        </div>
 
-  const formatTimer = (sec: number) => {
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return `${m}:${s<10?'0':''}${s}`;
+        <button 
+          onClick={requestPermission}
+          className="w-full py-5 bg-white text-gym-900 font-black rounded-2xl shadow-xl active:scale-95 transition-transform"
+        >
+          START TRACKING
+        </button>
+        <button onClick={onClose} className="mt-6 text-gray-500 font-bold hover:text-white">Cancel</button>
+      </div>
+    );
   }
 
   return (
     <div className="fixed inset-0 z-[60] bg-gym-900 flex flex-col animate-in fade-in duration-300">
-       {/* HEADER */}
-       <div className="p-4 flex justify-between items-center border-b border-gym-700 bg-gym-800">
-            <div>
-                <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
-                <p className="text-xs text-gym-accent font-mono tracking-widest">{exercise.isTimed ? 'TIMER MODE' : 'HYPERTROPHY PACER'}</p>
+      {/* HEADER */}
+      <div className="p-4 flex justify-between items-center border-b border-gym-700 bg-gym-800">
+        <div>
+          <h3 className="font-bold text-white text-lg">{exercise.name}</h3>
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${phase === 'CALIBRATING' ? 'bg-yellow-500 animate-pulse' : 'bg-gym-success'}`}></span>
+            <p className="text-xs text-gym-accent font-mono tracking-widest uppercase">{phase}</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={toggleHaptics} className={`p-2 rounded-full ${isHapticsEnabledState ? 'text-white bg-gym-700' : 'text-gray-600'}`}><Waves size={20}/></button>
+          <button onClick={toggleMute} className={`p-2 rounded-full ${!isMutedState ? 'text-white bg-gym-700' : 'text-gray-600'}`}>{isMutedState ? <VolumeX size={20}/> : <Volume2 size={20}/>}</button>
+          <button onClick={onClose} className="p-2 bg-gym-700 rounded-full text-white"><X size={20}/></button>
+        </div>
+      </div>
+
+      {/* MAIN TRACKER VIEW */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
+        
+        {/* CALIBRATION OVERLAY */}
+        {phase === 'CALIBRATING' ? (
+          <div className="text-center animate-in zoom-in">
+            <div className="w-48 h-48 bg-gym-800 rounded-full border-4 border-dashed border-gym-accent flex items-center justify-center mx-auto mb-8 animate-[spin_10s_linear_infinite]">
+                <Target size={64} className="text-gym-accent -rotate-[inherit]" />
             </div>
-            <div className="flex gap-3">
-                <button 
-                    onClick={toggleHaptics} 
-                    className={`p-2 rounded-full transition-colors ${isHapticsEnabledState ? 'text-white bg-gym-700' : 'text-gray-600 hover:text-gray-400'}`}
-                    title={isHapticsEnabledState ? "Vibration ON" : "Vibration OFF"}
-                >
-                    <Waves size={20} className={isHapticsEnabledState ? "animate-pulse" : ""}/>
-                </button>
-                <button 
-                    onClick={toggleMute} 
-                    className={`p-2 rounded-full transition-colors ${!isMutedState ? 'text-white bg-gym-700' : 'text-gray-600 hover:text-gray-400'}`}
-                    title="Toggle Audio"
-                >
-                    {isMutedState ? <VolumeX size={20}/> : <Volume2 size={20}/>}
-                </button>
-                <button onClick={handleClose} className="p-2 bg-gym-700 rounded-full text-white hover:bg-gym-600 transition-colors ml-2"><X size={20}/></button>
+            <h2 className="text-4xl font-black text-white mb-2">CALIBRATING</h2>
+            <p className="text-gray-400 max-w-[250px] mx-auto mb-8">Perform one slow repetition through your full range of motion.</p>
+            <button 
+              onClick={handleCalibrationFinished}
+              className="px-10 py-4 bg-gym-accent text-white font-black rounded-2xl shadow-lg"
+            >
+              DONE MOVING
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* LIVE FEEDBACK TEXT */}
+            <div className="absolute top-10 w-full text-center">
+                {processorEvent?.feedbackType === 'TOO_FAST' && (
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500 text-white font-black rounded-full animate-bounce">
+                    <AlertTriangle size={18} /> SLOW DOWN
+                  </div>
+                )}
+                {processorEvent?.feedbackType === 'PERFECT' && (
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-gym-success text-white font-black rounded-full animate-in fade-in">
+                    <CheckCircle2 size={18} /> PERFECT TEMPO
+                  </div>
+                )}
             </div>
-       </div>
 
-       {/* CONTENT */}
-       <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-           
-           {!isActive ? (
-               <div className="text-center animate-pulse">
-                   <h1 className="text-7xl font-black text-white tracking-tighter">READY</h1>
-                   <p className="text-gym-accent mt-4 font-mono">Focus on tempo</p>
-               </div>
-           ) : (
-               <>
-                   {/* PACER CIRCLE */}
-                   <div className="relative mb-16 scale-110">
-                       {/* Outer Ring & Content */}
-                       <div className={`w-72 h-72 rounded-full border-8 flex flex-col items-center justify-center transition-all duration-300 ${getPhaseColor(currentPhase)} ${getPhaseBg(currentPhase)}`}>
-                           
-                           {/* Phase Name or Timer */}
-                           {exercise.isTimed ? (
-                               <div className="text-center">
-                                   <p className="text-xs text-gray-400 font-bold uppercase mb-2">Duration</p>
-                                   <h2 className="text-6xl font-black tracking-tighter text-white drop-shadow-xl font-mono">
-                                       {formatTimer(timerSeconds)}
-                                   </h2>
-                               </div>
-                           ) : (
-                               <h2 className="text-5xl font-black uppercase italic tracking-tighter text-white drop-shadow-xl mb-3 animate-in slide-in-from-bottom-2 duration-300 key={currentPhase.action}">
-                                   {currentPhase.action}
-                               </h2>
-                           )}
-                           
-                           {/* Breathing Cue */}
-                           <div className="flex items-center gap-2 px-4 py-1.5 bg-black/40 rounded-full backdrop-blur-md mt-4">
-                               <Wind size={18} className="text-white" />
-                               <span className="text-sm font-bold text-white uppercase tracking-widest">{currentPhase.breathing}</span>
-                           </div>
+            {/* PACER CIRCLE */}
+            <div className="relative scale-110">
+              <div className={`w-72 h-72 rounded-full border-8 border-gym-800 flex flex-col items-center justify-center transition-all duration-300`}>
+                <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">Rep Progress</p>
+                <h2 className="text-7xl font-black text-white tabular-nums">
+                  {Math.round(progress * 100)}<span className="text-2xl text-gym-accent">%</span>
+                </h2>
+                <div className="mt-4 px-4 py-1 bg-gym-900 border border-gym-700 rounded-full text-xs font-bold text-gray-300">
+                  {phase.replace('_', ' ')}
+                </div>
+              </div>
+              
+              {/* Progress Ring (SVG) */}
+              <svg className="absolute top-0 left-0 w-72 h-72 -rotate-90 pointer-events-none">
+                <circle 
+                  cx="144" cy="144" r="136" 
+                  stroke="currentColor" strokeWidth="12" 
+                  fill="transparent"
+                  strokeLinecap="round"
+                  strokeDasharray={854} 
+                  strokeDashoffset={854 - (854 * progress)}
+                  className={`transition-all duration-75 text-gym-accent`}
+                />
+              </svg>
+            </div>
 
-                           {/* Countdown Timer (only for reps mode or breathing cues) */}
-                           <p className="text-2xl font-mono font-bold text-white/40 absolute -bottom-12 tabular-nums">
-                               {phaseTimeLeft.toFixed(1)}<span className="text-xs">s</span>
-                           </p>
-                       </div>
-                       
-                       {/* Progress Ring (SVG) */}
-                       <svg className="absolute top-0 left-0 w-72 h-72 -rotate-90 pointer-events-none drop-shadow-lg">
-                           <circle cx="144" cy="144" r="136" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-gym-900/30" />
-                           <circle 
-                               cx="144" cy="144" r="136" 
-                               stroke="currentColor" strokeWidth="8" 
-                               fill="transparent"
-                               strokeLinecap="round"
-                               strokeDasharray={854} // 2 * pi * 136
-                               strokeDashoffset={854 - (854 * (phaseTimeLeft / currentPhase.duration))}
-                               className={`transition-all duration-75 ${currentPhase.breathing === 'Exhale' ? 'text-gym-success' : 'text-blue-400'}`}
-                           />
-                       </svg>
-                   </div>
+            <div className="mt-12 flex items-center gap-8">
+               <button 
+                 onClick={() => setIsPaused(!isPaused)}
+                 className={`w-20 h-20 rounded-full flex items-center justify-center border-2 ${isPaused ? 'bg-gym-success border-white' : 'bg-gym-800 border-gym-700'} text-white shadow-xl transition-all`}
+               >
+                 {isPaused ? <Play size={32} fill="currentColor" /> : <Pause size={32} fill="currentColor" />}
+               </button>
+            </div>
+          </>
+        )}
+      </div>
 
-                   {/* CONTROLS */}
-                   <div className="w-full flex items-center gap-8 justify-center">
-                       <button 
-                         onClick={resetPacer}
-                         className="p-5 bg-gym-800 text-gray-400 rounded-full hover:bg-gym-700 hover:text-white transition-all shadow-lg border border-gym-700"
-                         title="Reset"
-                       >
-                           <RotateCcw size={28} />
-                       </button>
-                       
-                       <button 
-                         onClick={togglePause}
-                         className={`w-28 h-28 rounded-full flex items-center justify-center shadow-2xl transition-all active:scale-95 ${isPaused ? 'bg-gym-success text-white ring-4 ring-gym-success/30' : 'bg-yellow-500 text-gym-900 ring-4 ring-yellow-500/30'}`}
-                       >
-                           {isPaused ? <Play size={48} fill="currentColor" /> : <Pause size={48} fill="currentColor" />}
-                       </button>
-                   </div>
-                   
-                   {/* HAPTIC LEGEND (Visual Feedback) */}
-                   {isHapticsEnabledState && (
-                       <p className="absolute bottom-24 text-[10px] text-gray-500 uppercase font-mono tracking-widest animate-pulse w-full text-center">
-                           {['HOLD','SQUEEZE','STRETCH','PAUSE'].some(k=>currentPhase.action.toUpperCase().includes(k)) ? '∅ SILENCE (HOLD)' : 
-                            ['LOWER','DOWN','RETURN','RELEASE'].some(k=>currentPhase.action.toUpperCase().includes(k)) ? '♥ HEARTBEAT (CONTROL)' : 
-                            '〰 CONTINUOUS (DRIVE)'}
-                       </p>
-                   )}
-               </>
-           )}
-       </div>
-
-       {/* FOOTER */}
-       <div className="p-6 bg-gym-800 border-t border-gym-700 flex justify-between items-center z-10">
-           <div>
-               <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">{exercise.isTimed ? 'Current Time' : 'Reps Completed'}</p>
-               <p className="text-5xl font-black text-white leading-none">
-                   {exercise.isTimed ? formatTimer(timerSeconds) : reps} 
-                   {!exercise.isTimed && <span className="text-xl text-gray-500 font-medium">/ {targetReps}</span>}
-               </p>
-           </div>
-           <button 
-             onClick={handleFinish}
-             className="px-8 py-4 bg-white text-gym-900 font-bold rounded-2xl shadow-xl active:scale-95 transition-transform hover:bg-gray-100"
-           >
-               Finish Set
-           </button>
-       </div>
+      {/* FOOTER */}
+      <div className="p-6 bg-gym-800 border-t border-gym-700 flex justify-between items-center z-10">
+        <div>
+          <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Lifting Guard</p>
+          <p className="text-5xl font-black text-white leading-none">
+            {reps} <span className="text-xl text-gray-500 font-medium">/ {targetReps}</span>
+          </p>
+        </div>
+        <button 
+          onClick={onClose}
+          className="px-8 py-4 bg-white text-gym-900 font-black rounded-2xl shadow-xl active:scale-95 transition-transform"
+        >
+          FINISH SET
+        </button>
+      </div>
     </div>
   );
 };
