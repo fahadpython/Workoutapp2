@@ -243,7 +243,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                 <>
                     <div className="w-32 h-32 rounded-full border-4 border-dashed border-red-500 animate-spin mx-auto mb-6"></div>
                     <h3 className="text-2xl font-bold text-white mb-2">Perform 1 Rep</h3>
-                    <p className="text-gray-400 mb-8 text-sm">Full Range: Start -> End -> Start</p>
+                    <p className="text-gray-400 mb-8 text-sm">Full Range: Start &rarr; End &rarr; Start</p>
                     <button onClick={finishCalibration} className="w-full py-4 bg-red-600 text-white font-bold rounded-xl shadow-lg">Done Moving</button>
                 </>
             )}
