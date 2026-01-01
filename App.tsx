@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
 import { SessionData, UserStats, DAYS_OF_WEEK, Exercise, UserProfile, TempoRating } from './types';
-import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, checkAndMigrateLegacyData, getCurrentUser, switchUser, exportUserData, importUserData, logNutrition } from './services/storageService';
+import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, checkAndMigrateLegacyData, getCurrentUser, switchUser, exportUserData, importUserData, logNutrition, getUniqueWorkoutDates } from './services/storageService';
 import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
@@ -12,7 +11,9 @@ import BodyHeatmap from './components/BodyHeatmap';
 import WorkoutReceipt from './components/WorkoutReceipt';
 import LoginScreen from './components/LoginScreen';
 import HelpView from './components/HelpView';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle, Utensils, Plus, X } from 'lucide-react';
+import CalendarView from './components/CalendarView';
+import NutritionLogger from './components/NutritionLogger';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle, Utensils, Plus, X, Calendar } from 'lucide-react';
 
 const App: React.FC = () => {
   // User Management State
@@ -21,7 +22,7 @@ const App: React.FC = () => {
   // App State (Lazy initialized only if user exists)
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS' | 'HELP'>('HOME');
+  const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS' | 'HELP' | 'CALENDAR'>('HOME');
   
   // Dashboard Data
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [weeklyIn, setWeeklyIn] = useState(0);
   // UPDATED TYPE: now stores object with hours and volume
   const [heatmapData, setHeatmapData] = useState<Record<string, { hours: number; volume: number }>>({});
+  const [currentStreak, setCurrentStreak] = useState(0);
   
   const [todayIndex] = useState(new Date().getDay());
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
@@ -37,8 +39,6 @@ const App: React.FC = () => {
   
   // Nutrition Input State
   const [showNutritionModal, setShowNutritionModal] = useState(false);
-  const [foodCals, setFoodCals] = useState('');
-  const [foodName, setFoodName] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +77,23 @@ const App: React.FC = () => {
     setWeeklyBurned(stats.totalCaloriesBurned);
     setWeeklyIn(stats.totalCaloriesIn);
     setHeatmapData(getMuscleHeatmapData());
+    
+    // Calculate simple streak for home screen (full logic in Calendar)
+    const dates = getUniqueWorkoutDates();
+    let streakCount = 0;
+    let checkDate = new Date();
+    checkDate.setHours(0,0,0,0);
+    // Check today
+    if (dates.has(checkDate.toISOString().split('T')[0])) streakCount++;
+    // Check past
+    checkDate.setDate(checkDate.getDate() - 1);
+    for (let i = 0; i < 30; i++) {
+        const iso = checkDate.toISOString().split('T')[0];
+        if (dates.has(iso)) streakCount++;
+        else if (checkDate.getDay() !== 0) break; // If not Sunday and missed, break
+        checkDate.setDate(checkDate.getDate() - 1);
+    }
+    setCurrentStreak(streakCount);
   };
 
   // Save session effect
@@ -135,12 +152,8 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogNutrition = () => {
-      const cals = parseInt(foodCals);
-      if (!cals) return;
-      logNutrition(cals, foodName);
-      setFoodCals('');
-      setFoodName('');
+  const handleLogNutrition = (calories: number, name: string) => {
+      logNutrition(calories, name);
       setShowNutritionModal(false);
       refreshDashboard();
   };
@@ -300,6 +313,10 @@ const App: React.FC = () => {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
+  if (view === 'CALENDAR') {
+      return <CalendarView onBack={() => { setView('HOME'); refreshDashboard(); }} />;
+  }
+
   if (view === 'STATS') {
     return <StatsView onBack={() => setView('HOME')} />;
   }
@@ -414,58 +431,22 @@ const App: React.FC = () => {
       
       {/* NUTRITION MODAL */}
       {showNutritionModal && (
-          <div className="fixed inset-0 z-[80] bg-gym-900/95 backdrop-blur flex flex-col items-center justify-center p-6 animate-in fade-in">
-              <div className="bg-gym-800 w-full rounded-2xl border border-gym-700 p-6 relative shadow-2xl">
-                  <button onClick={() => setShowNutritionModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
-                      <X size={24} />
-                  </button>
-                  
-                  <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-2">
-                      <Utensils className="text-gym-accent" /> Log Meal
-                  </h3>
-                  
-                  <div className="space-y-4">
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Estimated Calories</label>
-                          <input 
-                            type="number" 
-                            autoFocus
-                            placeholder="e.g. 500" 
-                            value={foodCals}
-                            onChange={(e) => setFoodCals(e.target.value)}
-                            className="w-full bg-gym-900 border border-gym-600 rounded-xl p-4 text-3xl text-white font-bold text-center focus:border-gym-accent focus:outline-none"
-                          />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Food Name (Optional)</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. Chicken Rice" 
-                            value={foodName}
-                            onChange={(e) => setFoodName(e.target.value)}
-                            className="w-full bg-gym-900 border border-gym-600 rounded-xl p-3 text-white text-center focus:border-gym-accent focus:outline-none"
-                          />
-                      </div>
-                      
-                      <button 
-                        onClick={handleLogNutrition}
-                        disabled={!foodCals}
-                        className="w-full py-4 bg-gym-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg mt-4 flex items-center justify-center gap-2"
-                      >
-                          <Plus size={20} /> Add to Log
-                      </button>
-                  </div>
-              </div>
-          </div>
+          <NutritionLogger 
+            onLog={handleLogNutrition} 
+            onClose={() => setShowNutritionModal(false)} 
+          />
       )}
 
       <header className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-black tracking-tighter text-white italic">IRON<span className="text-gym-accent">GUIDE</span></h1>
-          <p className="text-[10px] text-gray-500 font-mono tracking-[0.2em] uppercase">Hypertrophy Blueprint</p>
+          <div className="flex items-center gap-1.5 mt-1">
+              <Flame size={12} className="text-orange-500 animate-pulse" fill="currentColor" />
+              <span className="text-[10px] text-orange-400 font-bold tracking-wider uppercase">{currentStreak} Day Streak</span>
+          </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setView('HELP')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gray-400 hover:text-white" title="App Guide"><HelpCircle size={20} /></button>
+          <button onClick={() => setView('CALENDAR')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gym-accent" title="Calendar"><Calendar size={20} /></button>
           <button onClick={() => setView('STATS')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gym-accent"><BarChart3 size={20} /></button>
           <button onClick={() => setView('SETTINGS')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700"><UserCircle2 className="text-gray-400" /></button>
         </div>

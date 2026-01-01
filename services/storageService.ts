@@ -1,5 +1,5 @@
 
-import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise, TempoRating, NutritionLog } from '../types';
+import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise, TempoRating, NutritionLog, ReceiptData, PacerConfig } from '../types';
 import { ALL_WORKOUTS } from '../constants';
 
 // --- KEY MANAGEMENT SYSTEM ---
@@ -306,16 +306,116 @@ export const wasSkippedLastSession = (exerciseId: string): boolean => {
     return diffDays <= 14;
 };
 
+// --- ADVANCED HYPERTROPHY CALORIE ALGORITHM ---
+export const calculateHypertrophyCalories = (
+    weightLifted: number,
+    reps: number,
+    rpe: number,
+    pacer: PacerConfig,
+    tempoRating: TempoRating | undefined,
+    userBodyWeight: number = 75,
+    isCompound: boolean = false
+): { total: number, active: number, epoc: number } => {
+    
+    // 1. Calculate Active Burn (During Set)
+    
+    // Step A: Parse Tempo & Calculate TUT
+    let repDuration = 0;
+    let eccentricDuration = 0;
+
+    if (pacer && pacer.phases) {
+        pacer.phases.forEach(p => {
+            repDuration += p.duration;
+            // Identify eccentric phase for EPOC damage calculation
+            if (['LOWER', 'DOWN', 'ECCENTRIC', 'OPEN'].some(k => p.action.toUpperCase().includes(k))) {
+                eccentricDuration += p.duration;
+            }
+        });
+    } else {
+        repDuration = 4; // Default 4s per rep (standard control)
+        eccentricDuration = 2; 
+    }
+
+    // Apply User Performance Rating to TUT
+    let performanceMultiplier = 1.0;
+    if (tempoRating === 'FAST') performanceMultiplier = 0.6; // Rushed reps
+    else if (tempoRating === 'CHEATED') performanceMultiplier = 0.4; // Very poor control
+    
+    const tutSeconds = repDuration * reps * performanceMultiplier;
+    const effectiveEccentric = eccentricDuration * performanceMultiplier;
+
+    // Step B: Calculate Modified MET
+    // Standard MET for "Weight Lifting" is ~3.5 to 6.0. 
+    // We scale this based on Intensity (RPE).
+    
+    const baseMET = 6.0;
+    
+    // RPE Scaling (Exponential): 
+    // RPE 5 = 1.25x Base
+    // RPE 8 = 2.28x Base
+    // RPE 10 = 3.0x Base
+    // Formula: 1 + (RPE^2 / 50)
+    const rpeFactor = 1 + (Math.pow(rpe, 2) / 50);
+    
+    const compoundFactor = isCompound ? 1.4 : 1.0; // More muscle mass = more oxygen
+    
+    const finalMET = baseMET * rpeFactor * compoundFactor;
+    
+    // Metabolic Cost formula: kcal = MET * BW * Duration(hr)
+    const metabolicCost = finalMET * userBodyWeight * (tutSeconds / 3600);
+
+    // Step C: Mechanical Work (Physics)
+    // Reward moving heavy weight even if RPE is low or TUT is short.
+    // Factor: 0.05 kcal per 1000kg moved (approximated physics work)
+    const mechanicalWork = (weightLifted * reps) * 0.00005 * 1000; // Simplified scaling
+
+    const activeBurn = metabolicCost + mechanicalWork;
+
+    // 2. Calculate Future Burn (EPOC / Repair)
+    // Represents energy to repair micro-tears and restore homeostasis.
+    
+    let epocMultiplier = 0;
+
+    // Intensity Bonus (Non-linear)
+    if (rpe >= 7) {
+        // +5% to +20%
+        epocMultiplier += 0.05 + ((rpe - 7) * 0.05); 
+    }
+
+    // Muscle Damage Bonus (Slow Eccentric)
+    if (effectiveEccentric >= 3) {
+        epocMultiplier += 0.10; // More micro-tears
+    }
+
+    // CNS / Systemic Bonus
+    if (isCompound && rpe >= 8) {
+        epocMultiplier += 0.10; // Systemic recovery cost
+    }
+
+    const epocBurn = activeBurn * epocMultiplier;
+    const totalBurn = activeBurn + epocBurn;
+
+    return {
+        total: Math.round(totalBurn * 10) / 10,
+        active: Math.round(activeBurn * 10) / 10,
+        epoc: Math.round(epocBurn * 10) / 10
+    };
+};
+
 export const calculateCalories = (metric1: number, metric2: number, metValue: number, isCardio: boolean = false) => {
+    // Legacy / Fallback wrapper
     const stats = loadUserStats();
     const bw = stats.bodyWeight > 0 ? stats.bodyWeight : 75;
-    let durationHours = 0;
+    
     if (isCardio) {
-      durationHours = metric2 / 60;
+        const durationHours = metric2 / 60;
+        return Math.round((metValue * bw * durationHours) * 10) / 10;
     } else {
-      durationHours = (metric2 * 4) / 3600; 
+        // Use generic values if specific params aren't passed (fallback)
+        // Assume RPE 8, Standard Tempo
+        const res = calculateHypertrophyCalories(metric1, metric2, 8, {phases: [], startDelay:0}, 'PERFECT', bw, false);
+        return res.total;
     }
-    return Math.round((metValue * bw * durationHours) * 10) / 10; 
 };
 
 export const saveExerciseLog = (exerciseId: string, weight: number, reps: number, setNumber: number, rpe?: number, tempoRating?: TempoRating) => {
@@ -360,6 +460,60 @@ export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null =
     logs: logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), 
     lastSession
   };
+};
+
+// ... (Rest of existing functions unchanged: getUniqueWorkoutDates, getLogsForDate, checkPlateau, etc.) ...
+// Ensure other exports like getUniqueWorkoutDates are preserved below.
+
+// Get all dates where ANY workout was performed
+export const getUniqueWorkoutDates = (): Set<string> => {
+    const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
+    if (!historyRaw) return new Set();
+    const fullHistory = JSON.parse(historyRaw);
+    const dates = new Set<string>();
+    
+    Object.values(fullHistory).forEach((logs: any) => {
+        if (Array.isArray(logs)) {
+            logs.forEach(log => {
+                if (log.date) dates.add(log.date);
+            });
+        }
+    });
+    return dates;
+};
+
+// Get a summary of what was done on a specific date
+export const getLogsForDate = (dateStr: string): { exerciseName: string; sets: number; bestSet: string }[] => {
+    const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
+    if (!historyRaw) return [];
+    const fullHistory = JSON.parse(historyRaw);
+    const summary: { exerciseName: string; sets: number; bestSet: string }[] = [];
+
+    Object.keys(fullHistory).forEach(exId => {
+        const logs = (fullHistory[exId] as HistoryLog[]).filter(l => l.date === dateStr);
+        if (logs.length > 0) {
+            const exDef = ALL_EXERCISES.find(e => e.id === exId) || { name: 'Unknown Exercise', type: 'weighted' };
+            const isCardio = (exDef as any).type === 'cardio';
+            
+            // Find best set
+            let bestSet = '';
+            if (isCardio) {
+                const maxDist = Math.max(...logs.map(l => l.weight));
+                const totalTime = logs.reduce((sum, l) => sum + l.reps, 0);
+                bestSet = `${maxDist}km / ${totalTime}min`;
+            } else {
+                const maxWeight = Math.max(...logs.map(l => l.weight));
+                bestSet = `${maxWeight}kg`;
+            }
+
+            summary.push({
+                exerciseName: exDef.name,
+                sets: logs.length,
+                bestSet
+            });
+        }
+    });
+    return summary;
 };
 
 export const checkPlateau = (exerciseId: string): { isStalled: boolean; recommendation: string | null } => {
@@ -410,8 +564,6 @@ export const clearAllData = () => {
   window.location.reload();
 };
 
-// --- Calibration Logic ---
-
 export const saveCalibration = (data: MotionCalibration) => {
   const key = getKey(BASE_KEYS.CALIBRATION);
   const raw = localStorage.getItem(key);
@@ -427,7 +579,6 @@ export const getCalibration = (exerciseId: string): MotionCalibration | null => 
   return db[exerciseId] || null;
 };
 
-// ... (Rest of analytics functions remain unchanged) ...
 export const getDashboardStats = (): DashboardStats => {
   const historyRaw = localStorage.getItem(getKey(BASE_KEYS.HISTORY));
   const fullHistory = historyRaw ? JSON.parse(historyRaw) : {};
@@ -463,6 +614,9 @@ export const getDashboardStats = (): DashboardStats => {
             weeklyVolume[exerciseDef.targetGroup]++;
          }
          const isCardio = exerciseDef?.type === 'cardio';
+         // Use existing calc for history aggregation, but we might want to store the real value in HistoryLog in future
+         // For now, re-calculating using old method for stats, or ideally use saved 'calories' if available
+         // Let's assume HistoryLog has calories property in future, but for now fallback to calc
          const setCals = calculateCalories(log.weight, log.reps, exerciseDef?.metValue || 4, isCardio);
          totalCaloriesBurned += setCals;
       }
@@ -576,20 +730,6 @@ export const getCreatineStats = (history: string[]) => {
   const thisMonth = history.filter(date => date.startsWith(currentMonth)).length;
   return { thisWeek, thisMonth };
 };
-
-export interface ReceiptData {
-  date: string;
-  duration: string;
-  totalVolume: number;
-  exercises: {
-    name: string;
-    sets: number;
-    bestWeight: number;
-    isPR: boolean;
-    isCardio: boolean;
-  }[];
-  quote: string;
-}
 
 export const getSessionSummary = (session: SessionData): ReceiptData => {
   const startTime = session.startTime;

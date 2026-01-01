@@ -1,6 +1,55 @@
 
-
 import { WorkoutDay, Exercise, PacerConfig } from './types';
+
+// --- NUTRITION DATA (INDIAN HOME STYLE) ---
+
+export const PORTION_MULTIPLIERS = {
+  'SMALL': 0.75,  // Diet / Half
+  'MEDIUM': 1.0,  // Standard Home
+  'LARGE': 1.5    // Heavy / Heap / Hotel
+};
+
+export interface FoodItemDef {
+  name: string;
+  baseCals: number;
+  baseProtein: number;
+  unit: string;
+}
+
+export const INDIAN_FOOD_DB: Record<string, FoodItemDef[]> = {
+  "Breads": [
+    { name: "Phulka / Roti", baseCals: 100, baseProtein: 3, unit: "pc" },
+    { name: "Thick Roti / Bhakri", baseCals: 140, baseProtein: 4, unit: "pc" },
+    { name: "Paratha (Home)", baseCals: 180, baseProtein: 4, unit: "pc" },
+    { name: "Ladi Pav", baseCals: 65, baseProtein: 2, unit: "pc" },
+    { name: "Rice/Jowar Bhakri", baseCals: 130, baseProtein: 3, unit: "pc" }
+  ],
+  "Rice & Biryani": [
+    { name: "Plain Rice", baseCals: 180, baseProtein: 4, unit: "Katori" },
+    { name: "Jeera Rice (Ghee)", baseCals: 220, baseProtein: 4, unit: "Katori" },
+    { name: "Dal Khichdi", baseCals: 220, baseProtein: 6, unit: "Katori" },
+    { name: "Chicken Biryani", baseCals: 550, baseProtein: 25, unit: "Plate" },
+    { name: "Mutton Biryani", baseCals: 700, baseProtein: 30, unit: "Plate" },
+    { name: "Chicken Pulav", baseCals: 450, baseProtein: 20, unit: "Plate" },
+    { name: "Mutton Pulav", baseCals: 600, baseProtein: 25, unit: "Plate" }
+  ],
+  "Gravies & Dal": [
+    { name: "Dal Tadka", baseCals: 160, baseProtein: 7, unit: "Katori" },
+    { name: "Plain Dal", baseCals: 110, baseProtein: 6, unit: "Katori" },
+    { name: "Chicken Gravy (2pcs)", baseCals: 300, baseProtein: 22, unit: "Bowl" },
+    { name: "Mutton Gravy (2pcs)", baseCals: 380, baseProtein: 20, unit: "Bowl" },
+    { name: "Egg Curry (2 Eggs)", baseCals: 240, baseProtein: 14, unit: "Bowl" },
+    { name: "Paneer Gravy", baseCals: 280, baseProtein: 12, unit: "Katori" }
+  ],
+  "Sides & Eggs": [
+    { name: "Mix Veg / Sabzi", baseCals: 150, baseProtein: 3, unit: "Katori" },
+    { name: "Green Leafy Sabzi", baseCals: 120, baseProtein: 3, unit: "Katori" },
+    { name: "Egg Bhurji (2 Eggs)", baseCals: 220, baseProtein: 12, unit: "Plate" },
+    { name: "Paneer Bhurji", baseCals: 280, baseProtein: 18, unit: "Katori" },
+    { name: "Bhurji Pav Meal", baseCals: 350, baseProtein: 16, unit: "Meal" },
+    { name: "Boiled Egg", baseCals: 70, baseProtein: 6, unit: "pc" }
+  ]
+};
 
 // --- PACER TEMPLATES ---
 
@@ -184,7 +233,7 @@ const WARMUP_EXERCISES: Exercise[] = [
     cues: 'Tap the bag. Move feet. Rhythm over power.',
     setup: 'Stand in front of heavy bag.',
     visualize: 'Dancing with the bag.',
-    action: 'Light punches, footwork, head movement. Do NOT hit hard.',
+    action: 'Light punches, footwork, head movement. Do not hit hard.',
     muscleFocus: 'Full Body', targetGroup: 'Warmup', feeling: 'Loose and warm.', isWarmup: true,
     pacer: PACER_FAST, metValue: 6.0, muscleSplit: { 'Shoulders': 30, 'Legs': 40, 'Core': 30 },
     motionType: 'cardio', isCompound: true,

@@ -1,4 +1,5 @@
 
+
 export type MuscleGroup = 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Triceps' | 'Biceps' | 'Abs' | 'Warmup' | 'Cardio' | 'Other';
 
 export type ExerciseType = 'weighted' | 'cardio';
@@ -167,6 +168,20 @@ export interface MotionCalibration {
   calibrationDirection: 'NORMAL' | 'INVERTED';
   confidenceScore: number; // 0-100, increases with successful sets
   lastUpdated: number;
+}
+
+export interface ReceiptData {
+  date: string;
+  duration: string;
+  totalVolume: number;
+  exercises: {
+    name: string;
+    sets: number;
+    bestWeight: number;
+    isPR: boolean;
+    isCardio: boolean;
+  }[];
+  quote: string;
 }
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

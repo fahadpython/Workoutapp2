@@ -1,6 +1,5 @@
-
 import React, { useState, useRef } from 'react';
-import { ReceiptData } from '../services/storageService';
+import { ReceiptData } from '../types';
 import { Share2, RotateCcw, Camera, Image as ImageIcon, X, Download } from 'lucide-react';
 
 interface Props {
