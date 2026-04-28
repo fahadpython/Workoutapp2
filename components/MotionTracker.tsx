@@ -75,8 +75,13 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
       window.removeEventListener('deviceorientation', handleOrientation);
   };
 
+  const isPausedRef = useRef(isPaused);
+  useEffect(() => {
+     isPausedRef.current = isPaused;
+  }, [isPaused]);
+
   const handleOrientation = (event: DeviceOrientationEvent) => {
-    if (processorRef.current && !isPaused && !isManualMode && isMountedRef.current) {
+    if (processorRef.current && !isPausedRef.current && !isManualMode && isMountedRef.current) {
       processorRef.current.process(event.alpha, event.beta, event.gamma);
     }
   };
@@ -126,9 +131,16 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           onRepCount(event.repCount);
           speak(String(event.repCount));
           
-          // In GAME mode, only vibrate on mistakes, not successes
           if (modeRef.current === 'STANDARD') {
               triggerHaptic([50, 50]);
+          }
+
+          if (event.repCount >= targetReps) {
+              if (processorRef.current) {
+                  processorRef.current.cleanup();
+                  setIsPaused(true);
+              }
+              speak("Target reached. Finish Set.");
           }
         }
         
@@ -144,6 +156,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
         setCalibState('DONE'); // No calibration needed for manual
         processorRef.current.setManualMode(true);
     } else {
+        window.removeEventListener('deviceorientation', handleOrientation);
         window.addEventListener('deviceorientation', handleOrientation);
     }
   };
@@ -370,7 +383,16 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
                    </button>
                )}
                <button 
-                 onClick={() => { setIsPaused(!isPaused); speak(isPaused ? "Resuming" : "Paused"); }}
+                 onClick={() => {
+                     const nextState = !isPaused;
+                     setIsPaused(nextState);
+                     speak(nextState ? "Paused" : "Resuming");
+                     if (processorRef.current) {
+                         if (nextState) processorRef.current.cleanup();
+                         else if (isManualMode) processorRef.current.setManualMode(true);
+                         else window.addEventListener('deviceorientation', handleOrientation);
+                     }
+                 }}
                  className={`w-20 h-20 rounded-full flex items-center justify-center border-4 ${isPaused ? 'bg-gym-success border-white' : 'bg-gym-800 border-gym-700'} text-white shadow-xl transition-all active:scale-95`}
                >
                  {isPaused ? <Play size={32} fill="currentColor" /> : <Pause size={32} fill="currentColor" />}

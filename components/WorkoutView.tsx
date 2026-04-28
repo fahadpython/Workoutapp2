@@ -12,6 +12,7 @@ interface Props {
   onFinishWorkout: () => void;
   onAddCustomExercise: (ex: Exercise) => void;
   onSwapExercise?: (originalId: string, newId: string) => void;
+  onAutocompleteDay?: () => void;
 }
 
 // Skip Modal Logic
@@ -87,7 +88,7 @@ const SkipModal: React.FC<SkipModalProps> = ({ exercise, onClose, onConfirm }) =
     );
 };
 
-const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinishWorkout, onAddCustomExercise, onSwapExercise }) => {
+const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinishWorkout, onAddCustomExercise, onSwapExercise, onAutocompleteDay }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [exerciseToSkip, setExerciseToSkip] = useState<Exercise | null>(null);
   const [pendingExercises, setPendingExercises] = useState<PendingExercise[]>([]);
@@ -490,7 +491,15 @@ const WorkoutView: React.FC<Props> = ({ plan, session, onSelectExercise, onFinis
         </div>
       </div>
 
-      <div className="mt-auto pt-4 pb-8 safe-pb z-20 bg-gym-900 border-t border-gym-800">
+      <div className="mt-auto pt-4 pb-8 safe-pb z-20 bg-gym-900 border-t border-gym-800 flex flex-col gap-2">
+        {!isAllComplete && onAutocompleteDay && (
+           <button
+             onClick={onAutocompleteDay}
+             className="w-full py-3 bg-gym-800 border border-gym-700 hover:border-gym-600 text-gray-300 font-bold rounded-lg uppercase tracking-wider text-sm transition-all"
+           >
+              Autocomplete Remaining Day
+           </button>
+        )}
         <button
           onClick={onFinishWorkout}
           className={`w-full py-4 font-bold rounded-lg uppercase tracking-wider shadow-lg transition-all

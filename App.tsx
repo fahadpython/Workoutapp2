@@ -23,6 +23,7 @@ const App: React.FC = () => {
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [view, setView] = useState<'HOME' | 'WORKOUT' | 'SETTINGS' | 'STATS' | 'HELP' | 'CALENDAR'>('HOME');
+  const [showExitModal, setShowExitModal] = useState(false);
   
   // Dashboard Data
   const [bestLift, setBestLift] = useState<{weight: number, exerciseName: string} | null>(null);
@@ -206,6 +207,10 @@ const App: React.FC = () => {
   };
 
   const handleLogSet = (metric1: number, metric2: number, isDropSet: boolean = false, isMonsterSet: boolean = false, rpe?: number, tempoRating?: TempoRating) => {
+    handleLogSets([{ metric1, metric2, isDropSet, isMonsterSet, rpe, tempoRating }]);
+  };
+
+  const handleLogSets = (sets: {metric1: number, metric2: number, isDropSet?: boolean, isMonsterSet?: boolean, rpe?: number, tempoRating?: TempoRating}[]) => {
     if (!currentSession || !currentSession.activeExerciseId || !activePlan) return;
     
     const exerciseId = currentSession.activeExerciseId;
@@ -220,31 +225,42 @@ const App: React.FC = () => {
     if (!exercise) return;
 
     const isCardio = exercise.type === 'cardio';
-    const calories = calculateCalories(metric1, metric2, exercise.metValue, isCardio);
-
-    const updatedCompleted = { ...currentSession.completedExercises };
-    if (!updatedCompleted[exerciseId]) updatedCompleted[exerciseId] = [];
     
-    const setNumber = updatedCompleted[exerciseId].length + 1;
-    updatedCompleted[exerciseId].push({
-      weight: metric1, reps: metric2, rpe, tempoRating, completed: true,
-      timestamp: Date.now(), isDropSet, isMonsterSet, calories
+    // We must use functional state update because we might be batching
+    setCurrentSession(prevSession => {
+        if (!prevSession) return null;
+        
+        const updatedCompleted = { ...prevSession.completedExercises };
+        if (!updatedCompleted[exerciseId]) updatedCompleted[exerciseId] = [];
+        
+        let newTimer = prevSession.activeTimer;
+        
+        sets.forEach((set, index) => {
+            const calories = calculateCalories(set.metric1, set.metric2, exercise.metValue, isCardio);
+            const setNumber = updatedCompleted[exerciseId].length + 1;
+            
+            updatedCompleted[exerciseId].push({
+              weight: set.metric1, reps: set.metric2, rpe: set.rpe, tempoRating: set.tempoRating, completed: true,
+              timestamp: Date.now() + index * 1000, isDropSet: set.isDropSet, isMonsterSet: set.isMonsterSet, calories
+            });
+
+            saveExerciseLog(exerciseId, set.metric1, set.metric2, setNumber, set.rpe, set.tempoRating);
+
+            const skipTimer = set.isDropSet || set.isMonsterSet;
+            if (exercise.restSeconds > 0 && !skipTimer && index === sets.length - 1) { // Only set timer for the last set added
+              newTimer = {
+                startTime: Date.now(),
+                duration: exercise.restSeconds,
+                endTime: Date.now() + (exercise.restSeconds * 1000),
+                exerciseId: exerciseId
+              };
+            } else if (skipTimer || index < sets.length - 1) {
+              newTimer = null;
+            }
+        });
+
+        return { ...prevSession, completedExercises: updatedCompleted, activeTimer: newTimer };
     });
-
-    saveExerciseLog(exerciseId, metric1, metric2, setNumber, rpe, tempoRating);
-
-    const skipTimer = isDropSet || isMonsterSet;
-    let newTimer = null;
-    if (exercise.restSeconds > 0 && !skipTimer) {
-      newTimer = {
-        startTime: Date.now(),
-        duration: exercise.restSeconds,
-        endTime: Date.now() + (exercise.restSeconds * 1000),
-        exerciseId: exerciseId
-      };
-    }
-
-    setCurrentSession({ ...currentSession, completedExercises: updatedCompleted, activeTimer: newTimer });
   };
 
   const handleFinishWorkout = () => {
@@ -345,7 +361,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-gym-900 text-white p-4 flex flex-col max-w-md mx-auto relative overflow-hidden">
         <div className="flex justify-between items-center mb-4 z-10 bg-gym-900/90 backdrop-blur pb-2 border-b border-gym-800 sticky top-0">
-           <button onClick={handleCompleteWorkoutSummary} className="text-xs text-gray-500 hover:text-white uppercase font-bold tracking-widest">Exit</button>
+           <button onClick={() => setShowExitModal(true)} className="text-xs text-gray-500 hover:text-white uppercase font-bold tracking-widest">Exit</button>
            <div className="flex flex-col items-end">
              <div className="flex items-center gap-2">
                  <Clock size={12} className="text-gym-accent" />
@@ -360,6 +376,7 @@ const App: React.FC = () => {
             exercise={activeExercise}
             completedSets={currentSession.completedExercises[activeExercise.id] || []}
             onLogSet={handleLogSet}
+            onLogSets={handleLogSets}
             onBack={handleBackToWorkoutList}
             onUpdateWater={updateWater} // Pass the hydration function
           />
@@ -371,9 +388,49 @@ const App: React.FC = () => {
             onFinishWorkout={handleFinishWorkout}
             onAddCustomExercise={handleAddCustomExercise}
             onSwapExercise={handleSwapExercise}
+            onAutocompleteDay={() => {
+                const exercisesToFill = activePlan.exercises.map(ex => {
+                   const swapId = currentSession.swaps?.[ex.id];
+                   return (swapId && ex.alternatives?.find(a => a.id === swapId)) || ex;
+                }).concat(currentSession.customExercises || []);
+
+                let tempSession = { ...currentSession };
+                
+                // Hacky way to simulate filling all. A better way would be using context 
+                // but let's just do a manual override here to instantly finish them.
+                const newCompleted = { ...tempSession.completedExercises };
+                exercisesToFill.forEach(ex => {
+                    const existingCount = newCompleted[ex.id]?.length || 0;
+                    const needed = Math.max(0, ex.sets - existingCount);
+                    if (!newCompleted[ex.id]) newCompleted[ex.id] = [];
+                    for(let i=0; i<needed; i++) {
+                        const targetReps = ex.reps.match(/(\d+)/) ? parseInt(ex.reps.match(/(\d+)/)![0]) : 10;
+                        newCompleted[ex.id].push({
+                            weight: 20, reps: targetReps, rpe: 8, tempoRating: 'PERFECT',
+                            completed: true, timestamp: Date.now(), isDropSet: false, isMonsterSet: false, calories: 10
+                        });
+                        saveExerciseLog(ex.id, 20, targetReps, existingCount + i + 1, 8, 'PERFECT');
+                    }
+                });
+                setCurrentSession({ ...tempSession, completedExercises: newCompleted });
+            }}
           />
         ) : null}
         {currentSession.activeTimer && <Timer activeTimer={currentSession.activeTimer} onCancel={cancelTimer} onComplete={cancelTimer} />}
+        
+        {showExitModal && (
+          <div className="fixed inset-0 z-[70] bg-gym-900/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+             <div className="bg-gym-800 border border-gym-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+                 <h3 className="text-xl font-bold text-white mb-2">Leave Workout?</h3>
+                 <p className="text-gray-400 text-sm mb-6">You can minimize it to run in the background, or end it completely and lose your today's active progress.</p>
+                 <div className="space-y-3">
+                     <button onClick={() => { setView('HOME'); setShowExitModal(false); refreshDashboard(); }} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-colors">Keep Running (Minimize)</button>
+                     <button onClick={() => { setCurrentSession(null); setView('HOME'); setShowExitModal(false); refreshDashboard(); }} className="w-full py-3 bg-red-900/50 hover:bg-red-800/50 text-red-200 border border-red-500/30 hover:border-red-500/50 rounded-lg font-bold text-sm transition-colors">End & Discard Progress</button>
+                     <button onClick={() => setShowExitModal(false)} className="w-full py-3 text-gray-400 hover:text-white rounded-lg font-bold text-sm transition-colors">Cancel</button>
+                 </div>
+             </div>
+          </div>
+        )}
       </div>
     );
   }

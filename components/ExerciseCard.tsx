@@ -12,6 +12,7 @@ interface Props {
   exercise: Exercise;
   completedSets: SetLog[];
   onLogSet: (weight: number, reps: number, isDropSet: boolean, isMonsterSet: boolean, rpe?: number, tempoRating?: TempoRating) => void;
+  onLogSets?: (sets: {metric1: number, metric2: number, isDropSet?: boolean, isMonsterSet?: boolean, rpe?: number, tempoRating?: TempoRating}[]) => void;
   onBack: () => void;
   onUpdateWater: (amount: number) => void;
 }
@@ -176,6 +177,7 @@ const ExerciseCard: React.FC<Props> = ({
   exercise, 
   completedSets, 
   onLogSet,
+  onLogSets,
   onBack,
   onUpdateWater
 }) => {
@@ -465,6 +467,23 @@ const ExerciseCard: React.FC<Props> = ({
     }
 
     commitSet(m1, m2);
+  };
+
+  const handleAutocomplete = () => {
+      if (!onLogSets) return;
+      const setsLeft = Math.max(0, exercise.sets - completedSets.length);
+      const targetReps = getTargetRepsInt();
+      const targetWeight = lastSession?.weight || 20;
+
+      const sets = Array.from({ length: setsLeft }).map(() => ({
+          metric1: targetWeight,
+          metric2: targetReps,
+          isDropSet: false,
+          isMonsterSet: false,
+          rpe: 8,
+          tempoRating: 'PERFECT' as TempoRating
+      }));
+      onLogSets(sets);
   };
 
   const handleSaveNote = () => {
@@ -935,9 +954,12 @@ const ExerciseCard: React.FC<Props> = ({
                           <span className="text-gym-accent font-bold tracking-wider text-xs uppercase">Current Set</span>
                           <h3 className="text-3xl font-bold text-white">Set {completedSets.length + 1}</h3>
                       </div>
-                      <div className="text-right">
-                          <p className="text-xs text-gray-400">Target</p>
-                          <p className="text-xl font-bold text-white">{exercise.reps} {isCardio ? '' : 'Reps'}</p>
+                      <div className="flex flex-col items-end gap-2">
+                          <button onClick={handleAutocomplete} className="px-2 py-1 bg-gym-700/50 hover:bg-gym-700 text-gray-400 text-[10px] font-bold rounded uppercase tracking-wider border border-gym-600 transition-colors">Auto-fill Rest</button>
+                          <div className="text-right">
+                              <p className="text-xs text-gray-400">Target</p>
+                              <p className="text-xl font-bold text-white">{exercise.reps} {isCardio ? '' : 'Reps'}</p>
+                          </div>
                       </div>
                   </div>
 
