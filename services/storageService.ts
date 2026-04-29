@@ -1,6 +1,7 @@
 
 import { SessionData, UserStats, ExerciseHistory, HistoryLog, DashboardStats, MuscleGroup, Exercise, CoachRecommendation, MotionCalibration, UserProfile, SkippedEntry, PendingExercise, TempoRating, NutritionLog, ReceiptData, PacerConfig } from '../types';
 import { ALL_WORKOUTS } from '../constants';
+import { supabase } from './supabase';
 
 // --- KEY MANAGEMENT SYSTEM ---
 
@@ -29,6 +30,22 @@ let currentUserId: string | null = localStorage.getItem(GLOBAL_KEYS.ACTIVE_USER_
 const getKey = (baseKey: string) => {
   if (!currentUserId) return baseKey; // Fallback for legacy or error state
   return `user_${currentUserId}_${baseKey}`;
+};
+
+let syncTimeout: any = null;
+export const triggerAutoSync = () => {
+    if (!currentUserId) return;
+    if (syncTimeout) clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(() => {
+        (async () => {
+            try { 
+                const { syncDataToSupabase } = await import('./storageService');
+                await syncDataToSupabase(); 
+            } catch (e) {
+                console.error("Auto-sync failed", e);
+            }
+        })();
+    }, 2000);
 };
 
 // --- USER MANAGEMENT ---
@@ -170,6 +187,7 @@ export const saveSession = (session: SessionData | null) => {
   } else {
     localStorage.removeItem(key);
   }
+  triggerAutoSync();
 };
 
 export const loadSession = (): SessionData | null => {
@@ -179,6 +197,7 @@ export const loadSession = (): SessionData | null => {
 
 export const saveUserStats = (stats: UserStats) => {
   localStorage.setItem(getKey(BASE_KEYS.STATS), JSON.stringify(stats));
+  triggerAutoSync();
 };
 
 export const loadUserStats = (): UserStats => {
@@ -204,7 +223,7 @@ export const loadUserStats = (): UserStats => {
   return { ...parsed, creatineHistory: parsed.creatineHistory || [] };
 };
 
-export const logNutrition = (calories: number, name: string) => {
+export const logNutrition = (calories: number, name: string, protein?: number, carbs?: number, fat?: number) => {
     const key = getKey(BASE_KEYS.NUTRITION);
     const raw = localStorage.getItem(key);
     const logs: NutritionLog[] = raw ? JSON.parse(raw) : [];
@@ -213,10 +232,14 @@ export const logNutrition = (calories: number, name: string) => {
         timestamp: Date.now(),
         date: getTodayString(),
         calories,
-        name: name || "Snack"
+        name: name || "Snack",
+        protein,
+        carbs,
+        fat
     };
     logs.push(newLog);
     localStorage.setItem(key, JSON.stringify(logs));
+    triggerAutoSync();
     return newLog;
 };
 
@@ -231,12 +254,46 @@ export const getTodayNutritionTotal = (): number => {
     return logs.filter(l => l.date === today).reduce((sum, l) => sum + l.calories, 0);
 };
 
+// --- WATER DEBT TRACKING ---
+const WATER_DEBT_KEY = 'aim_water_debt';
+
+export const getWaterDebt = (): number => {
+    // Only track debt for the current day
+    const raw = localStorage.getItem(WATER_DEBT_KEY);
+    if (!raw) return 0;
+    try {
+        const data = JSON.parse(raw);
+        if (data.date !== getTodayString()) return 0;
+        return parseInt(data.amount) || 0;
+    } catch {
+        return 0;
+    }
+}
+
+export const addWaterDebt = (amount: number): number => {
+    const next = getWaterDebt() + amount;
+    localStorage.setItem(WATER_DEBT_KEY, JSON.stringify({ amount: next, date: getTodayString() }));
+    return next;
+}
+
+export const clearWaterDebt = (amount: number = -1): number => {
+    if (amount === -1) {
+        localStorage.setItem(WATER_DEBT_KEY, JSON.stringify({ amount: 0, date: getTodayString() }));
+        return 0;
+    }
+    const next = Math.max(0, getWaterDebt() - amount);
+    localStorage.setItem(WATER_DEBT_KEY, JSON.stringify({ amount: next, date: getTodayString() }));
+    return next;
+}
+// --- END WATER DEBT TRACKING ---
+
 export const saveExerciseNote = (exerciseId: string, note: string) => {
     const key = getKey(BASE_KEYS.NOTES);
     const raw = localStorage.getItem(key);
     const db = raw ? JSON.parse(raw) : {};
     db[exerciseId] = note;
     localStorage.setItem(key, JSON.stringify(db));
+    triggerAutoSync();
 };
 
 export const getExerciseNote = (exerciseId: string): string => {
@@ -266,6 +323,7 @@ export const saveSkippedExercise = (exerciseId: string, reason: string, targetWo
         });
         localStorage.setItem(pendingKey, JSON.stringify(pendingList));
     }
+    triggerAutoSync();
 };
 
 export const getPendingExercises = (currentWorkoutId?: string): PendingExercise[] => {
@@ -288,6 +346,7 @@ export const completePendingExercise = (exerciseId: string) => {
     let list: PendingExercise[] = JSON.parse(raw);
     list = list.filter(item => item.exerciseId !== exerciseId);
     localStorage.setItem(key, JSON.stringify(list));
+    triggerAutoSync();
 };
 
 export const wasSkippedLastSession = (exerciseId: string): boolean => {
@@ -434,6 +493,7 @@ export const saveExerciseLog = (exerciseId: string, weight: number, reps: number
   history[exerciseId].push(newLog);
   localStorage.setItem(key, JSON.stringify(history));
   completePendingExercise(exerciseId);
+  triggerAutoSync();
 };
 
 export const getExerciseHistory = (exerciseId: string): ExerciseHistory | null => {
@@ -570,6 +630,7 @@ export const saveCalibration = (data: MotionCalibration) => {
   const db = raw ? JSON.parse(raw) : {};
   db[data.exerciseId] = data;
   localStorage.setItem(key, JSON.stringify(db));
+  triggerAutoSync();
 };
 
 export const getCalibration = (exerciseId: string): MotionCalibration | null => {
@@ -819,4 +880,88 @@ export const analyzeSetPerformance = (exercise: Exercise, weight: number, reps: 
     if (reps >= targetRepsInt) return "Target hit. Good job.";
     if (reps < targetRepsInt - 3) return "Struggling? Rest longer or drop weight.";
     return "Solid effort.";
+};
+
+export const restoreFromSupabaseData = (data: any): boolean => {
+    try {
+        if (!data || !data.data) {
+           return false;
+        }
+        if (!currentUserId) {
+           return false;
+        }
+        if (data.data.session) localStorage.setItem(getKey(BASE_KEYS.SESSION), data.data.session);
+        if (data.data.stats) localStorage.setItem(getKey(BASE_KEYS.STATS), data.data.stats);
+        if (data.data.history) localStorage.setItem(getKey(BASE_KEYS.HISTORY), data.data.history);
+        if (data.data.calibration) localStorage.setItem(getKey(BASE_KEYS.CALIBRATION), data.data.calibration);
+        if (data.data.notes) localStorage.setItem(getKey(BASE_KEYS.NOTES), data.data.notes);
+        if (data.data.skipped) localStorage.setItem(getKey(BASE_KEYS.SKIPPED), data.data.skipped);
+        if (data.data.pending) localStorage.setItem(getKey(BASE_KEYS.PENDING), data.data.pending);
+        if (data.data.nutrition) localStorage.setItem(getKey(BASE_KEYS.NUTRITION), data.data.nutrition);
+        return true;
+    } catch (e) {
+        console.error("Failed to restore from Supabase data", e);
+        return false;
+    }
+}
+
+// --- SUPABASE SYNC ---
+export const syncDataToSupabase = async (): Promise<{ success: boolean; message: string }> => {
+    if (!currentUserId) return { success: false, message: "No active user to sync." };
+
+    const backup = {
+        userProfile: getCurrentUser(),
+        timestamp: Date.now(),
+        data: {
+          session: localStorage.getItem(getKey(BASE_KEYS.SESSION)),
+          stats: localStorage.getItem(getKey(BASE_KEYS.STATS)),
+          history: localStorage.getItem(getKey(BASE_KEYS.HISTORY)),
+          calibration: localStorage.getItem(getKey(BASE_KEYS.CALIBRATION)),
+          notes: localStorage.getItem(getKey(BASE_KEYS.NOTES)),
+          skipped: localStorage.getItem(getKey(BASE_KEYS.SKIPPED)),
+          pending: localStorage.getItem(getKey(BASE_KEYS.PENDING)),
+          nutrition: localStorage.getItem(getKey(BASE_KEYS.NUTRITION)),
+        }
+    };
+
+    try {
+        const { error } = await supabase
+            .from('user_data')
+            .upsert({ 
+                user_id: currentUserId, 
+                data: backup,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+
+        if (error) {
+            console.error("Supabase Sync Error:", error);
+            return { success: false, message: error.message };
+        }
+        return { success: true, message: "Data synced successfully." };
+    } catch (e: any) {
+        return { success: false, message: e.message || "Failed to sync to Supabase." };
+    }
+};
+
+export const fetchFromSupabase = async (): Promise<{ success: boolean; message: string; data?: any }> => {
+    if (!currentUserId) return { success: false, message: "No active user to fetch for." };
+    
+    try {
+        const { data, error } = await supabase
+            .from('user_data')
+            .select('*')
+            .eq('user_id', currentUserId)
+            .single();
+
+        if (error) {
+            return { success: false, message: error.message };
+        }
+        
+        if (data && data.data) {
+            return { success: true, message: "Data fetched.", data: data.data };
+        }
+        return { success: false, message: "No data found." };
+    } catch (e: any) {
+        return { success: false, message: e.message || "Failed to fetch from Supabase." };
+    }
 };

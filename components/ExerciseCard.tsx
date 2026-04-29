@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Exercise, SetLog, ExerciseHistory, PacerPhase, MotionType, CoachRecommendation, TempoRating } from '../types';
-import { getExerciseHistory, calculateHypertrophyCalories, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau, saveExerciseNote, getExerciseNote, wasSkippedLastSession, saveSkippedExercise, loadUserStats } from '../services/storageService';
+import { getExerciseHistory, calculateHypertrophyCalories, calculateCalories, getProgressionRecommendation, analyzeSetPerformance, checkPlateau, saveExerciseNote, getExerciseNote, wasSkippedLastSession, saveSkippedExercise, loadUserStats, getWaterDebt, addWaterDebt, clearWaterDebt } from '../services/storageService';
+import { generateCoachFeedback } from '../services/aiService';
 import { Info, CheckCircle, ChevronDown, ChevronUp, Dumbbell, ArrowLeft, History, Mic, Square, Layers, Wind, Flame, Volume2, VolumeX, Timer, Footprints, Activity, Zap, BrainCircuit, Eye, Wrench, AlertTriangle, Ruler, Smartphone, Play, Crown, TrendingUp, Calculator, ArrowDownCircle, Gauge, BookOpen, Edit3, X, HelpCircle, Lightbulb, AlertOctagon, MicOff, AlertCircle, Film, ExternalLink, RefreshCw, BarChart2 } from 'lucide-react';
 import StickFigure from './StickFigure';
 import BenchLeveler from './BenchLeveler';
@@ -211,7 +212,6 @@ const ExerciseCard: React.FC<Props> = ({
   const [penaltyData, setPenaltyData] = useState<{ type: string; message: string; prescription: string } | null>(null);
 
   // Hydration State
-  const [waterDebt, setWaterDebt] = useState(0);
   const [showWaterReminder, setShowWaterReminder] = useState(false);
   const [waterReminderAmount, setWaterReminderAmount] = useState(0);
 
@@ -244,8 +244,29 @@ const ExerciseCard: React.FC<Props> = ({
     
     // AI Coach Logic
     if (!isCardio && !exercise.isWarmup) {
-        const rec = getProgressionRecommendation(exercise);
-        setRecommendation(rec);
+        // Fallback synchronous recommendation
+        const syncRec = getProgressionRecommendation(exercise);
+        setRecommendation(syncRec);
+        
+        // Fetch AI recommendation
+        if (hist && hist.lastSession) {
+            import('../services/aiService').then(({ generateWeightSuggestion }) => {
+                generateWeightSuggestion(
+                    exercise.name,
+                    hist.lastSession!.topSet.weight,
+                    hist.lastSession!.topSet.reps,
+                    hist.lastSession!.topSet.rpe,
+                    exercise.reps
+                ).then(aiRec => {
+                    setRecommendation({
+                        type: aiRec.type,
+                        targetWeight: aiRec.targetWeight,
+                        targetReps: exercise.reps,
+                        reason: aiRec.reason + " ✨" // Add sparkle to indicate AI
+                    });
+                }).catch(err => console.error(err));
+            });
+        }
     }
     
     // Check for Plateau
@@ -289,16 +310,10 @@ const ExerciseCard: React.FC<Props> = ({
       return match ? parseInt(match[0]) : 10;
   };
 
-  const calculateWaterLoss = (m1: number, m2: number) => {
-      let loss = 0;
-      if (isCardio) {
-          loss = m2 * 10; 
-      } else {
-          const vol = m1 * m2;
-          const compoundMult = exercise.isCompound ? 1.5 : 1.0;
-          loss = vol * 0.04 * compoundMult;
-      }
-      return Math.round(loss);
+  const calculateWaterLoss = () => {
+      // More accurate: ~1.2ml of water loss per calorie burned.
+      // Scales gracefully with both hypertrophy effort (which includes EPOC heat) and cardio duration.
+      return Math.round(energyData.total * 1.2);
   };
 
   const checkPenaltyCondition = (m1: number, m2: number, currentRpe: number): { type: string; message: string; prescription: string } | null => {
@@ -361,9 +376,8 @@ const ExerciseCard: React.FC<Props> = ({
 
     // --- HYDRATION LOGIC ---
     if (!exercise.isWarmup) {
-        const loss = calculateWaterLoss(m1, m2);
-        const newDebt = waterDebt + loss;
-        setWaterDebt(newDebt);
+        const loss = calculateWaterLoss();
+        const newDebt = addWaterDebt(loss);
 
         // Lower threshold to 80ml (~3 sips) to make it more frequent and visible
         if (newDebt > 80) {
@@ -405,7 +419,13 @@ const ExerciseCard: React.FC<Props> = ({
     if (!exercise.isWarmup && !isCardio) {
         const feedback = analyzeSetPerformance(exercise, m1, m2);
         setCoachFeedback(feedback);
-        setTimeout(() => setCoachFeedback(null), 4000);
+        
+        generateCoachFeedback(exercise.name, m1, m2, rpe).then((aiMsg) => {
+            setCoachFeedback(aiMsg);
+            setTimeout(() => setCoachFeedback(null), 5000);
+        }).catch(() => {
+            setTimeout(() => setCoachFeedback(null), 4000);
+        });
     }
     
     if (isMonster) {
@@ -603,11 +623,11 @@ const ExerciseCard: React.FC<Props> = ({
               reason={`Based on ${completedSets.length} sets of work.`}
               onLog={() => { 
                   onUpdateWater(waterReminderAmount); 
-                  setWaterDebt(0); 
+                  clearWaterDebt(waterReminderAmount); 
                   setShowWaterReminder(false); 
               }}
               onSkip={() => {
-                  setWaterDebt(prev => prev / 2);
+                  clearWaterDebt(Math.round(waterReminderAmount / 2));
                   setShowWaterReminder(false);
               }}
           />

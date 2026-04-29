@@ -120,6 +120,9 @@ export interface NutritionLog {
   date: string; // ISO YYYY-MM-DD
   calories: number;
   name: string;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
 }
 
 export interface SkippedEntry {

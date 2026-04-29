@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { WORKOUT_SCHEDULE, ALL_WORKOUTS } from './constants';
 import { SessionData, UserStats, DAYS_OF_WEEK, Exercise, UserProfile, TempoRating } from './types';
-import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, checkAndMigrateLegacyData, getCurrentUser, switchUser, exportUserData, importUserData, logNutrition, getUniqueWorkoutDates } from './services/storageService';
+import { loadSession, saveSession, loadUserStats, saveUserStats, saveExerciseLog, clearAllData, getTodayString, getDashboardStats, getCreatineStats, calculateCalories, getMuscleHeatmapData, getSessionSummary, checkAndMigrateLegacyData, getCurrentUser, switchUser, exportUserData, importUserData, logNutrition, getUniqueWorkoutDates, syncDataToSupabase, fetchFromSupabase, restoreFromSupabaseData } from './services/storageService';
 import ExerciseCard from './components/ExerciseCard';
 import WorkoutView from './components/WorkoutView';
 import Timer from './components/Timer';
@@ -13,7 +14,7 @@ import LoginScreen from './components/LoginScreen';
 import HelpView from './components/HelpView';
 import CalendarView from './components/CalendarView';
 import NutritionLogger from './components/NutritionLogger';
-import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle, Utensils, Plus, X, Calendar } from 'lucide-react';
+import { Droplets, Trophy, Battery, UserCircle2, ArrowRight, Settings, Trash2, Edit2, BarChart3, ArrowLeft, Flame, Clock, LogOut, Download, Upload, HelpCircle, Utensils, Plus, X, Calendar, Cloud } from 'lucide-react';
 
 const App: React.FC = () => {
   // User Management State
@@ -97,6 +98,38 @@ const App: React.FC = () => {
     setCurrentStreak(streakCount);
   };
 
+  // Sync view state with browser history to intercept back button
+  useEffect(() => {
+    // Only push state if we are navigating away from HOME
+    if (view !== 'HOME') {
+        window.history.pushState({ view }, '');
+    }
+  }, [view]);
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+        // When user clicks the hardware back button
+        if (view === 'WORKOUT') {
+            // Prevent going back immediately
+            window.history.pushState({ view: 'WORKOUT' }, ''); 
+            
+            // If they are deep inside an exercise, just go back to workout list
+            if (currentSession?.activeExerciseId) {
+                setCurrentSession({ ...currentSession, activeExerciseId: null });
+            } else {
+                // If they are on the workout list, show the exit confirmation modal
+                setShowExitModal(true);
+            }
+        } else {
+            // For other views like SETTINGS, CALENDAR, STATS, go back to HOME
+            setView('HOME');
+        }
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [view, currentSession]);
+
   // Save session effect
   useEffect(() => {
     if (currentUser) saveSession(currentSession);
@@ -128,10 +161,14 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    import('./services/supabase').then(({ supabase }) => {
+        supabase.auth.signOut().catch(console.error);
+    });
     setCurrentUser(null);
     setCurrentSession(null);
     setUserStats(null);
     switchUser(''); // Clear active user in storage
+    window.location.reload();
   };
 
   const handleBackup = () => {
@@ -153,8 +190,28 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogNutrition = (calories: number, name: string) => {
-      logNutrition(calories, name);
+  const handleCloudBackup = async () => {
+     const result = await syncDataToSupabase();
+     alert(result.message);
+  };
+
+  const handleCloudRestore = async () => {
+     const result = await fetchFromSupabase();
+     if (result.success && result.data) {
+         const success = restoreFromSupabaseData(result.data);
+         if (success) {
+            alert("Data restored from Cloud! The app will reload.");
+            window.location.reload();
+         } else {
+            alert("Failed to restore data from Cloud.");
+         }
+     } else {
+         alert(result.message || "Failed to fetch data from Cloud.");
+     }
+  };
+
+  const handleLogNutrition = (calories: number, name: string, protein?: number, carbs?: number, fat?: number) => {
+      logNutrition(calories, name, protein, carbs, fat);
       setShowNutritionModal(false);
       refreshDashboard();
   };
@@ -468,6 +525,15 @@ const App: React.FC = () => {
                </button>
                <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
             </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-3">
+               <button onClick={handleCloudBackup} className="py-3 bg-indigo-600/20 text-indigo-400 border border-indigo-600/30 rounded-lg font-bold text-sm flex flex-col items-center gap-1 hover:bg-indigo-600/30">
+                  <Cloud size={20} /> Cloud Sync
+               </button>
+               <button onClick={handleCloudRestore} className="py-3 bg-teal-600/20 text-teal-400 border border-teal-600/30 rounded-lg font-bold text-sm flex flex-col items-center gap-1 hover:bg-teal-600/30">
+                  <Cloud size={20} /> Cloud Fetch
+               </button>
+            </div>
             <p className="text-[10px] text-gray-500 mt-2">Backups are specific to {currentUser.name}.</p>
           </div>
 
@@ -484,122 +550,140 @@ const App: React.FC = () => {
 
   // --- RENDER: DASHBOARD (HOME) ---
   return (
-    <div className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto font-sans flex flex-col relative">
+    <div className="min-h-screen grid-bg bg-gym-900 text-white pb-20 safe-pb font-sans flex flex-col relative overflow-hidden">
       
       {/* NUTRITION MODAL */}
-      {showNutritionModal && (
-          <NutritionLogger 
-            onLog={handleLogNutrition} 
-            onClose={() => setShowNutritionModal(false)} 
-          />
-      )}
-
-      <header className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-black tracking-tighter text-white italic">IRON<span className="text-gym-accent">GUIDE</span></h1>
-          <div className="flex items-center gap-1.5 mt-1">
-              <Flame size={12} className="text-orange-500 animate-pulse" fill="currentColor" />
-              <span className="text-[10px] text-orange-400 font-bold tracking-wider uppercase">{currentStreak} Day Streak</span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setView('CALENDAR')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gym-accent" title="Calendar"><Calendar size={20} /></button>
-          <button onClick={() => setView('STATS')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700 text-gym-accent"><BarChart3 size={20} /></button>
-          <button onClick={() => setView('SETTINGS')} className="w-10 h-10 rounded-full bg-gym-800 flex items-center justify-center border border-gym-700 hover:bg-gym-700"><UserCircle2 className="text-gray-400" /></button>
-        </div>
-      </header>
-
-      {/* Hero Stats */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-gym-800/30 rounded-lg p-3 border border-gym-700">
-           <div className="flex items-center gap-2 mb-2"><Trophy size={14} className="text-yellow-500" /><p className="text-[10px] text-gray-400 uppercase font-bold">Best Lift</p></div>
-           {bestLift ? (<div><p className="text-sm font-bold text-white truncate">{bestLift.exerciseName}</p><p className="text-lg font-black text-gym-accent italic">{bestLift.weight}kg</p></div>) : (<p className="text-xs text-gray-500 italic">No logs yet</p>)}
-        </div>
-        
-        {/* ENERGY BALANCE CARD */}
-        <div className="bg-gym-800/30 rounded-lg p-3 border border-gym-700 relative overflow-hidden group">
-           <div className="flex items-center justify-between mb-1 relative z-10">
-               <div className="flex items-center gap-2"><Flame size={14} className="text-orange-500" /><p className="text-[10px] text-gray-400 uppercase font-bold">Energy Balance</p></div>
-               <button onClick={() => setShowNutritionModal(true)} className="p-1 bg-gym-800 rounded text-gym-accent hover:bg-gym-700 transition-colors"><Plus size={12} /></button>
-           </div>
-           <div className="relative z-10 flex justify-between items-end">
-               <div>
-                   <p className="text-[9px] text-orange-400 uppercase">Burned</p>
-                   <p className="text-sm font-black text-white">{weeklyBurned}</p>
-               </div>
-               <div className="h-6 w-px bg-gym-700"></div>
-               <div className="text-right">
-                   <p className="text-[9px] text-green-400 uppercase">Intake</p>
-                   <p className="text-sm font-black text-white">{weeklyIn}</p>
-               </div>
-           </div>
-        </div>
-      </div>
-
-      <div className="mb-6 animate-in fade-in slide-in-from-bottom-2"><BodyHeatmap recoveryStatus={heatmapData} /></div>
-
-      <div className="mb-8 flex-1">
-        <div className="flex justify-between items-baseline mb-3">
-          <div className="flex gap-2 items-center">
-            <h2 className="text-gray-400 text-sm uppercase font-bold tracking-wider">{selectedWorkoutId ? 'Custom Plan' : DAYS_OF_WEEK[todayIndex]}</h2>
-            <button onClick={() => setShowWorkoutSelector(!showWorkoutSelector)} className="text-xs text-gym-accent flex items-center gap-1 hover:underline"><Edit2 size={10} /> Change</button>
-          </div>
-          <span className="text-xs text-gym-accent font-mono">{getTodayString()}</span>
-        </div>
-
-        {showWorkoutSelector && (
-          <div className="mb-4 grid grid-cols-1 gap-2 animate-in slide-in-from-top-2">
-            {ALL_WORKOUTS.map(w => (
-              <button key={w.id} onClick={() => { setSelectedWorkoutId(w.id); setShowWorkoutSelector(false); }} className={`p-3 rounded-lg text-left text-sm font-bold border transition-all flex items-center justify-between ${(selectedWorkoutId === w.id) || (!selectedWorkoutId && WORKOUT_SCHEDULE[todayIndex]?.id === w.id) ? 'bg-gym-accent text-white border-blue-400' : 'bg-gym-800 text-gray-400 border-gym-700 hover:bg-gym-700'}`}>{w.name}</button>
-            ))}
-             <button onClick={() => { setSelectedWorkoutId(null); setShowWorkoutSelector(false); }} className="text-xs text-center text-gray-500 py-1">Reset to Schedule</button>
-          </div>
+      <AnimatePresence>
+        {showNutritionModal && (
+            <NutritionLogger 
+              onLog={handleLogNutrition} 
+              onClose={() => setShowNutritionModal(false)} 
+            />
         )}
-        
-        {activePlan ? (
-          <div className="bg-gradient-to-br from-gym-800 to-gym-900 border border-gym-700 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-            <div className="relative z-10">
-              <h3 className="text-3xl font-bold text-white mb-2 leading-none">{activePlan.name.split(':')[0]}</h3>
-              <p className="text-sm text-gray-300 mb-6 font-medium border-l-2 border-gym-accent pl-3 py-1">{activePlan.focus}</p>
-              <div className="flex items-center gap-6 text-sm text-gray-400 mb-8">
-                 <div className="flex flex-col"><span className="font-bold text-white text-xl">{activePlan.exercises.length}</span><span className="text-[10px] uppercase tracking-wide">Exercises</span></div>
-                 <div className="w-px h-8 bg-gym-700"></div>
-                 <div className="flex flex-col"><span className="font-bold text-white text-xl">~50</span><span className="text-[10px] uppercase tracking-wide">Minutes</span></div>
-              </div>
-              <button onClick={handleStartWorkout} className="w-full py-4 bg-gym-accent hover:bg-blue-600 active:scale-95 transition-all text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 text-lg">Start Workout <ArrowRight size={20} /></button>
+      </AnimatePresence>
+
+      <div className="p-6 max-w-md mx-auto w-full">
+        <header className="flex justify-between items-center mb-10 pt-4">
+          <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex flex-col">
+            <h1 className="text-4xl font-display uppercase tracking-widest text-white leading-none">
+              IRON<span className="text-gym-accent">GUIDE</span>
+            </h1>
+            <div className="flex items-center gap-1.5 mt-2 bg-gym-800 brutal-border px-2 py-1 inline-flex self-start rounded-none transform -skew-x-6">
+                <Flame size={14} className="text-gym-warning animate-pulse" fill="currentColor" />
+                <span className="text-[10px] text-white font-mono font-bold tracking-wider uppercase">{currentStreak} Day Streak</span>
             </div>
-          </div>
-        ) : (
-          <div className="bg-gym-800 border border-gym-700 rounded-2xl p-8 text-center opacity-80 flex flex-col items-center justify-center h-64">
-            <Battery className="text-gym-success mb-4" size={40} />
-            <h3 className="text-2xl font-bold text-white mb-2">Rest & Grow</h3>
-            <p className="text-gray-400 mb-4 max-w-[200px]">"Muscle is built in the recovery, not the gym."</p>
-            <button onClick={() => setShowWorkoutSelector(true)} className="text-sm text-gym-accent underline">Do a workout anyway</button>
-          </div>
-        )}
-      </div>
+          </motion.div>
+          <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex gap-2">
+            <button onClick={() => setView('CALENDAR')} className="w-12 h-12 bg-gym-800 brutal-border flex items-center justify-center hover:bg-gym-accent hover:text-black transition-colors" title="Calendar"><Calendar size={20} /></button>
+            <button onClick={() => setView('STATS')} className="w-12 h-12 bg-gym-800 brutal-border flex items-center justify-center hover:bg-gym-accent hover:text-black transition-colors"><BarChart3 size={20} /></button>
+            <button onClick={() => setView('SETTINGS')} className="w-12 h-12 bg-gym-800 brutal-border flex items-center justify-center hover:bg-gym-accent hover:text-black transition-colors"><Settings size={20} /></button>
+          </motion.div>
+        </header>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="bg-gym-800 rounded-xl p-4 border border-gym-700 flex flex-col justify-between h-48 relative overflow-hidden shadow-lg">
-           <div className="absolute bottom-0 left-0 right-0 bg-blue-500/10 transition-all duration-700 ease-out" style={{ height: `${Math.min(((userStats?.waterIntake || 0) / 4000) * 100, 100)}%` }}></div>
-           <div className="relative z-10 flex justify-between items-start mb-2"><div className="p-2 bg-gym-900/50 rounded-lg"><Droplets size={20} className="text-blue-400" /></div><span className="text-[10px] font-mono text-gray-400 uppercase">Goal: 4L</span></div>
-           <div className="relative z-10 text-center mb-2"><div className="text-2xl font-bold text-white">{userStats?.waterIntake || 0}<span className="text-sm font-normal text-gray-500">ml</span></div></div>
-           <div className="relative z-10 grid grid-cols-3 gap-1">
-             <button onClick={() => updateWater(30)} className="bg-blue-900/40 hover:bg-blue-800 text-blue-200 text-[10px] py-2 rounded font-bold border border-blue-500/20">Sip</button>
-             <button onClick={() => updateWater(100)} className="bg-blue-900/40 hover:bg-blue-800 text-blue-200 text-[10px] py-2 rounded font-bold border border-blue-500/20">Gulp</button>
-             <button onClick={() => updateWater(250)} className="bg-blue-900/40 hover:bg-blue-800 text-blue-200 text-[10px] py-2 rounded font-bold border border-blue-500/20">Glass</button>
-           </div>
-        </div>
-        <button onClick={toggleCreatine} className={`rounded-xl p-4 border cursor-pointer transition-all h-48 flex flex-col justify-between shadow-lg group relative overflow-hidden ${userStats?.creatineTaken ? 'bg-gym-success/10 border-gym-success/30' : 'bg-gym-800 border-gym-700'}`}>
-           {userStats?.creatineTaken && <div className="absolute inset-0 bg-gym-success/5 animate-pulse"></div>}
-           <div className="flex justify-between items-start relative z-10"><div className={`p-2 rounded-lg transition-colors ${userStats?.creatineTaken ? 'bg-gym-success/20' : 'bg-gym-900/50'}`}><Battery size={20} className={userStats?.creatineTaken ? 'text-gym-success' : 'text-gray-400'} /></div></div>
-           <div className="relative z-10 text-left">
-             <div className={`text-xl font-bold transition-colors ${userStats?.creatineTaken ? 'text-gym-success' : 'text-gray-300'}`}>{userStats?.creatineTaken ? 'Taken' : 'Creatine'}</div>
-             <div className="flex gap-2 mt-3"><div className="flex flex-col"><span className="text-[10px] text-gray-500 uppercase">Week</span><span className="text-sm font-bold text-white">{getCreatineStats(userStats?.creatineHistory || []).thisWeek}/7</span></div><div className="w-px bg-gray-700"></div><div className="flex flex-col"><span className="text-[10px] text-gray-500 uppercase">Month</span><span className="text-sm font-bold text-white">{getCreatineStats(userStats?.creatineHistory || []).thisMonth}</span></div></div>
-             <div className={`mt-2 h-1 rounded-full w-full ${userStats?.creatineTaken ? 'bg-gym-success' : 'bg-gray-700'}`}></div>
-           </div>
-        </button>
+        {/* Hero Stats */}
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}
+          className="grid grid-cols-2 gap-4 mb-8"
+        >
+          <div className="bg-gym-800 brutal-border brutal-shadow p-4 relative group">
+             <div className="flex items-center gap-2 mb-3"><Trophy size={16} className="text-gym-accent" /><p className="text-[12px] text-gray-400 font-mono uppercase font-bold">Best Lift</p></div>
+             {bestLift ? (<div><p className="text-sm font-bold text-white truncate">{bestLift.exerciseName}</p><p className="text-2xl font-display text-gym-accent mt-1">{bestLift.weight}kg</p></div>) : (<p className="text-xs text-gray-500 font-mono">No logs yet</p>)}
+          </div>
+          
+          {/* ENERGY BALANCE CARD */}
+          <div className="bg-gym-800 brutal-border brutal-shadow p-4 relative overflow-hidden group flex flex-col justify-between">
+             <div className="flex items-center justify-between mb-3 relative z-10">
+                 <div className="flex items-center gap-2"><Flame size={16} className="text-gym-warning" /><p className="text-[12px] text-gray-400 font-mono uppercase font-bold">Energy</p></div>
+                 <button onClick={() => setShowNutritionModal(true)} className="p-1.5 bg-gym-900 border border-gym-700 hover:bg-gym-accent hover:text-black hover:border-black transition-colors"><Plus size={14} /></button>
+             </div>
+             <div className="relative z-10 flex justify-between items-end">
+                 <div>
+                     <p className="text-[10px] text-gym-warning font-mono uppercase mb-1">Burned</p>
+                     <p className="text-xl font-display text-white">{weeklyBurned}</p>
+                 </div>
+                 <div className="h-8 w-px bg-gym-600 transform rotate-12"></div>
+                 <div className="text-right">
+                     <p className="text-[10px] text-gym-success font-mono uppercase mb-1">Intake</p>
+                     <p className="text-xl font-display text-white">{weeklyIn}</p>
+                 </div>
+             </div>
+          </div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="mb-8">
+            <div className="brutal-border bg-gym-800 p-2"><BodyHeatmap recoveryStatus={heatmapData} /></div>
+        </motion.div>
+
+        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }} className="mb-10 flex-1">
+          <div className="flex justify-between items-baseline mb-4 bg-gym-900 brutal-border px-4 py-2">
+            <div className="flex gap-4 items-center">
+              <h2 className="text-white text-md font-mono uppercase font-bold tracking-widest">{selectedWorkoutId ? 'Custom Plan' : DAYS_OF_WEEK[todayIndex]}</h2>
+              <button onClick={() => setShowWorkoutSelector(!showWorkoutSelector)} className="text-[10px] bg-gym-800 px-2 py-1 text-gym-accent font-mono uppercase flex items-center gap-1 hover:bg-gym-accent hover:text-black transition-colors border border-gym-600 hover:border-black">Change</button>
+            </div>
+            <span className="text-xs text-gym-accent font-mono">{getTodayString()}</span>
+          </div>
+
+          <AnimatePresence>
+          {showWorkoutSelector && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className="mb-6 grid grid-cols-1 gap-2 overflow-hidden"
+            >
+              {ALL_WORKOUTS.map(w => (
+                <button key={w.id} onClick={() => { setSelectedWorkoutId(w.id); setShowWorkoutSelector(false); }} className={`p-4 text-left text-sm font-mono uppercase font-bold brutal-border transition-all flex items-center justify-between ${(selectedWorkoutId === w.id) || (!selectedWorkoutId && WORKOUT_SCHEDULE[todayIndex]?.id === w.id) ? 'bg-gym-accent text-black brutal-shadow' : 'bg-gym-800 text-gray-400 hover:text-white hover:border-white'}`}>{w.name}</button>
+              ))}
+               <button onClick={() => { setSelectedWorkoutId(null); setShowWorkoutSelector(false); }} className="text-[10px] font-mono text-center text-gray-500 py-2 hover:text-white">Reset to Schedule</button>
+            </motion.div>
+          )}
+          </AnimatePresence>
+          
+          {activePlan ? (
+            <div className="bg-gym-accent text-black brutal-border brutal-shadow p-6 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-64 h-64 border-[40px] border-black opacity-5 rounded-full -mr-20 -mt-20 pointer-events-none"></div>
+              <div className="relative z-10">
+                <h3 className="text-5xl font-display uppercase leading-none mb-4">{activePlan.name.split(':')[0]}</h3>
+                <p className="text-sm font-bold mb-8 border-l-4 border-black pl-3 py-1 uppercase">{activePlan.focus}</p>
+                <div className="flex items-center gap-8 text-sm font-mono mb-10">
+                   <div className="flex flex-col"><span className="font-display text-4xl leading-none">{activePlan.exercises.length}</span><span className="text-[10px] uppercase font-bold tracking-widest mt-1">Exercises</span></div>
+                   <div className="w-1 h-12 bg-black/20 transform rotate-12"></div>
+                   <div className="flex flex-col"><span className="font-display text-4xl leading-none">~50</span><span className="text-[10px] uppercase font-bold tracking-widest mt-1">Minutes</span></div>
+                </div>
+                <button onClick={handleStartWorkout} className="w-full py-5 bg-black text-white hover:bg-gym-800 transition-colors font-display text-2xl uppercase tracking-widest brutal-border flex items-center justify-center gap-3">Start Workout <ArrowRight size={24} /></button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gym-800 brutal-border brutal-shadow p-10 text-center flex flex-col items-center justify-center">
+              <Battery className="text-gym-success mb-6" size={48} />
+              <h3 className="text-4xl font-display uppercase text-white mb-4">Rest & Grow</h3>
+              <p className="text-gray-400 font-mono text-xs mb-8 max-w-[200px] uppercase leading-relaxed text-center">Muscle is built in the recovery, not the gym.</p>
+              <button onClick={() => setShowWorkoutSelector(true)} className="text-xs font-mono font-bold text-gym-accent bg-gym-900 border border-gym-700 px-4 py-2 hover:bg-gym-accent hover:text-black transition-colors uppercase">Do a workout anyway</button>
+            </div>
+          )}
+        </motion.div>
+
+        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }} className="grid grid-cols-2 gap-4">
+          <div className="bg-gym-800 brutal-border brutal-shadow p-4 flex flex-col justify-between h-56 relative overflow-hidden">
+             <div className="absolute bottom-0 left-0 right-0 bg-blue-500/20 transition-all duration-700 ease-out" style={{ height: `${Math.min(((userStats?.waterIntake || 0) / 4000) * 100, 100)}%` }}></div>
+             <div className="relative z-10 flex justify-between items-start mb-2"><div className="p-2 bg-gym-900 brutal-border"><Droplets size={20} className="text-blue-400" /></div><span className="text-[10px] font-mono text-gray-400 font-bold uppercase bg-gym-900 px-2 py-1 brutal-border">Goal: 4L</span></div>
+             <div className="relative z-10 text-center my-4"><div className="text-4xl font-display text-white">{userStats?.waterIntake || 0}<span className="text-sm font-mono text-gray-500 ml-1">ml</span></div></div>
+             <div className="relative z-10 grid grid-cols-3 gap-2">
+               <button onClick={() => updateWater(30)} className="bg-gym-900 hover:bg-blue-600 hover:text-white text-blue-400 font-mono text-[10px] py-3 text-center border border-gym-700 font-bold transition-colors">Sip</button>
+               <button onClick={() => updateWater(100)} className="bg-gym-900 hover:bg-blue-600 hover:text-white text-blue-400 font-mono text-[10px] py-3 text-center border border-gym-700 font-bold transition-colors">Gulp</button>
+               <button onClick={() => updateWater(250)} className="bg-gym-900 hover:bg-blue-600 hover:text-white text-blue-400 font-mono text-[10px] py-3 text-center border border-gym-700 font-bold transition-colors">Glass</button>
+             </div>
+          </div>
+          <button onClick={toggleCreatine} className={`p-4 border brutal-shadow transition-all h-56 flex flex-col justify-between group relative overflow-hidden ${userStats?.creatineTaken ? 'bg-gym-success text-black border-black' : 'bg-gym-800 border-gym-700 hover:border-gym-accent text-white'}`}>
+             <div className="flex justify-between items-start relative z-10"><div className={`p-2 brutal-border transition-colors ${userStats?.creatineTaken ? 'bg-black text-gym-success' : 'bg-gym-900 text-gray-400'}`}><Battery size={20} /></div></div>
+             <div className="relative z-10 text-left">
+               <div className={`text-4xl font-display uppercase tracking-wider mb-2 ${userStats?.creatineTaken ? 'text-black' : 'text-white'}`}>{userStats?.creatineTaken ? 'Taken' : 'Creatine'}</div>
+               <div className="flex gap-4 mt-4 font-mono">
+                 <div className="flex flex-col"><span className={`text-[10px] uppercase font-bold ${userStats?.creatineTaken ? 'text-black/60' : 'text-gray-500'}`}>Week</span><span className={`text-lg font-bold ${userStats?.creatineTaken ? 'text-black' : 'text-white'}`}>{getCreatineStats(userStats?.creatineHistory || []).thisWeek}/7</span></div>
+                 <div className={`w-0.5 transform rotate-12 ${userStats?.creatineTaken ? 'bg-black/20' : 'bg-gym-700'}`}></div>
+                 <div className="flex flex-col"><span className={`text-[10px] uppercase font-bold ${userStats?.creatineTaken ? 'text-black/60' : 'text-gray-500'}`}>Month</span><span className={`text-lg font-bold ${userStats?.creatineTaken ? 'text-black' : 'text-white'}`}>{getCreatineStats(userStats?.creatineHistory || []).thisMonth}</span></div>
+               </div>
+             </div>
+          </button>
+        </motion.div>
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
   // --- STATE ---
   const [isPaused, setIsPaused] = useState(false);
   const [reps, setReps] = useState(0);
+  const repsRef = useRef(0);
   const [processorEvent, setProcessorEvent] = useState<MotionEvent | null>(null);
   
   // Settings
@@ -126,7 +127,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
              speak(event.feedback);
         }
 
-        if (event.repCount > reps) {
+        if (event.repCount > repsRef.current) {
+          repsRef.current = event.repCount;
           setReps(event.repCount);
           onRepCount(event.repCount);
           speak(String(event.repCount));
@@ -138,8 +140,8 @@ const MotionTracker: React.FC<Props> = ({ exercise, onRepCount, onClose, targetR
           if (event.repCount >= targetReps) {
               if (processorRef.current) {
                   processorRef.current.cleanup();
-                  setIsPaused(true);
               }
+              setIsPaused(true);
               speak("Target reached. Finish Set.");
           }
         }

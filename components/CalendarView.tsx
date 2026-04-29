@@ -1,7 +1,8 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, CheckCircle, XCircle, Flame, Calendar, Info, Dumbbell, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ArrowLeft, ChevronLeft, ChevronRight, CheckCircle, XCircle, Flame, Calendar, Info, Dumbbell, AlertCircle, X } from 'lucide-react';
 import { getUniqueWorkoutDates, getLogsForDate, getTodayString } from '../services/storageService';
 import { WORKOUT_SCHEDULE } from '../constants';
 
@@ -134,45 +135,45 @@ const CalendarView: React.FC<Props> = ({ onBack }) => {
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   return (
-    <div className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto animate-in slide-in-from-right">
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={onBack} className="text-gray-400 hover:text-white p-2 -ml-2">
-          <ArrowLeft size={24} />
+    <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="min-h-screen bg-gym-900 text-white p-6 max-w-md mx-auto grid-bg pb-20">
+      <div className="flex items-center gap-4 mb-8 bg-black brutal-border p-4">
+        <button onClick={onBack} className="text-white hover:text-gym-accent">
+          <ArrowLeft size={28} />
         </button>
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-           <Calendar className="text-gym-accent" /> Attendance
+        <h2 className="text-3xl font-display uppercase tracking-widest flex items-center gap-3">
+           <Calendar className="text-gym-accent" size={28} /> Tracker
         </h2>
       </div>
 
       {/* STREAK HEADER */}
-      <div className="bg-gradient-to-r from-orange-900/40 to-red-900/40 border border-orange-500/30 rounded-2xl p-6 text-center mb-8 relative overflow-hidden shadow-lg">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-              <Flame size={120} />
+      <div className="bg-gym-warning/20 border-4 border-gym-warning p-6 text-center mb-10 relative overflow-hidden brutal-shadow">
+          <div className="absolute top-0 right-0 p-4 opacity-10 blur-sm mix-blend-overlay">
+              <Flame size={150} />
           </div>
-          <p className="text-orange-400 font-bold uppercase tracking-widest text-xs mb-1">Current Streak</p>
-          <div className="flex items-center justify-center gap-2">
-              <h1 className="text-6xl font-black text-white drop-shadow-md">{streak}</h1>
-              <Flame size={40} className="text-orange-500 animate-pulse" fill="currentColor" />
+          <p className="text-white font-mono font-bold uppercase tracking-widest text-xs mb-2">Current Streak</p>
+          <div className="flex items-end justify-center gap-3">
+              <h1 className="text-8xl font-display text-white drop-shadow-md leading-none">{streak}</h1>
+              <Flame size={48} className="text-gym-warning animate-pulse mb-2" fill="currentColor" />
           </div>
-          <p className="text-xs text-gray-400 mt-2">Rest days (Sundays) don't break the chain!</p>
+          <p className="text-xs font-mono text-gray-300 mt-4 uppercase">Rest days (Sundays) don't break the chain.</p>
       </div>
 
       {/* MONTH NAV */}
-      <div className="flex justify-between items-center mb-4 px-2">
-          <button onClick={() => changeMonth(-1)} className="p-2 bg-gym-800 rounded-full hover:bg-gym-700 text-gray-400"><ChevronLeft size={20}/></button>
-          <h3 className="text-lg font-bold text-white uppercase tracking-wider">
+      <div className="flex justify-between items-center mb-6 px-2">
+          <button onClick={() => changeMonth(-1)} className="p-3 bg-black brutal-border hover:bg-gym-accent hover:text-black transition-colors"><ChevronLeft size={24}/></button>
+          <h3 className="text-2xl font-display text-white uppercase tracking-wider">
               {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
           </h3>
-          <button onClick={() => changeMonth(1)} className="p-2 bg-gym-800 rounded-full hover:bg-gym-700 text-gray-400"><ChevronRight size={20}/></button>
+          <button onClick={() => changeMonth(1)} className="p-3 bg-black brutal-border hover:bg-gym-accent hover:text-black transition-colors"><ChevronRight size={24}/></button>
       </div>
 
       {/* CALENDAR GRID */}
-      <div className="grid grid-cols-7 gap-1 mb-2">
+      <div className="grid grid-cols-7 gap-2 mb-2">
           {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-              <div key={i} className="text-center text-xs font-bold text-gray-500 py-2">{d}</div>
+              <div key={i} className="text-center font-display text-xl text-gray-500 py-2">{d}</div>
           ))}
       </div>
-      <div className="grid grid-cols-7 gap-1.5 mb-6">
+      <div className="grid grid-cols-7 gap-2 mb-10">
           {/* Empty cells for padding */}
           {[...Array(firstDay)].map((_, i) => <div key={`empty-${i}`} />)}
           
@@ -189,97 +190,99 @@ const CalendarView: React.FC<Props> = ({ onBack }) => {
               const isFuture = iso > todayIso;
               const isMissed = !isDone && !isRest && !isFuture;
 
-              let bgClass = 'bg-gym-800 border-gym-700 text-gray-400';
-              if (isDone) bgClass = 'bg-green-900/50 border-green-500 text-white shadow-[0_0_10px_rgba(34,197,94,0.3)]';
-              else if (isMissed) bgClass = 'bg-red-900/20 border-red-500/50 text-red-300';
-              else if (isRest) bgClass = 'bg-gym-900 border-gym-800 text-gray-600';
-              if (isToday) bgClass += ' ring-2 ring-white';
+              let bgClass = 'bg-gym-800 border-2 border-gym-700 text-gray-400';
+              if (isDone) bgClass = 'bg-gym-success text-black border-2 border-black font-black brutal-shadow';
+              else if (isMissed) bgClass = 'bg-gym-warning/20 border-2 border-gym-warning text-gym-warning font-bold align-middle';
+              else if (isRest) bgClass = 'bg-black border-2 border-gym-800 text-gray-600';
+              if (isToday) bgClass += ' ring-4 ring-white ring-offset-2 ring-offset-black relative z-10';
 
               return (
                   <button 
                     key={day} 
                     onClick={() => handleDayClick(day)}
-                    className={`aspect-square rounded-lg border flex flex-col items-center justify-center relative ${bgClass}`}
+                    className={`aspect-square flex flex-col items-center justify-center transition-transform hover:scale-110 ${bgClass}`}
                   >
-                      <span className="text-sm font-bold">{day}</span>
-                      {isDone && <div className="w-1.5 h-1.5 rounded-full bg-green-400 mt-1"></div>}
-                      {isMissed && <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1"></div>}
+                      <span className="text-lg font-mono">{day}</span>
                   </button>
               );
           })}
       </div>
 
       {/* MONTHLY STATS */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-gym-800 p-3 rounded-xl border border-gym-700 text-center">
-              <p className="text-[10px] uppercase font-bold text-gray-500">Consistency</p>
-              <p className={`text-xl font-black ${consistency >= 80 ? 'text-green-400' : consistency >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="bg-black p-4 brutal-border text-center">
+              <p className="text-[10px] uppercase font-mono font-bold text-gray-500 mb-2 mt-1">Consistency</p>
+              <p className={`text-4xl font-display ${consistency >= 80 ? 'text-gym-success' : consistency >= 50 ? 'text-gym-accent' : 'text-gym-warning'}`}>
                   {consistency}%
               </p>
           </div>
-          <div className="bg-gym-800 p-3 rounded-xl border border-gym-700 text-center">
-              <p className="text-[10px] uppercase font-bold text-gray-500">Missed Days</p>
-              <p className="text-xl font-black text-white">{missedCount}</p>
+          <div className="bg-black p-4 brutal-border text-center">
+              <p className="text-[10px] font-mono uppercase font-bold text-gray-500 mb-2 mt-1">Missed Days</p>
+              <p className="text-4xl font-display text-white">{missedCount}</p>
           </div>
       </div>
 
       {/* DAY DETAILS MODAL (Inline) */}
+      <AnimatePresence>
       {selectedDay && (
-          <div className="bg-gym-800 rounded-xl border border-gym-700 p-4 animate-in slide-in-from-bottom-2 shadow-2xl">
-              <div className="flex justify-between items-start mb-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-black brutal-border p-6 shadow-2xl relative">
+              <div className="flex justify-between items-start mb-6">
                   <div>
-                      <p className="text-sm font-bold text-white mb-1">
+                      <p className="text-xl font-display text-white mb-2 uppercase">
                           {selectedDay.date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
                       </p>
-                      <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                              selectedDay.status === 'DONE' ? 'bg-green-900 text-green-400' :
-                              selectedDay.status === 'MISSED' ? 'bg-red-900 text-red-400' :
-                              selectedDay.status === 'REST' ? 'bg-gray-700 text-gray-300' : 'bg-blue-900 text-blue-300'
+                      <div className="flex items-center gap-3">
+                          <span className={`text-xs font-mono font-bold px-3 py-1 uppercase brutal-border ${
+                              selectedDay.status === 'DONE' ? 'bg-gym-success text-black' :
+                              selectedDay.status === 'MISSED' ? 'bg-gym-warning text-black' :
+                              selectedDay.status === 'REST' ? 'bg-gray-700 text-white' : 'bg-gym-accent text-black'
                           }`}>
                               {selectedDay.status}
                           </span>
-                          {selectedDay.status === 'MISSED' && <span className="text-[10px] text-gray-500">Scheduled: {WORKOUT_SCHEDULE[selectedDay.date.getDay()]?.name || "Rest"}</span>}
+                          {selectedDay.status === 'MISSED' && <span className="text-[10px] font-mono text-gray-400 uppercase">Sch: {WORKOUT_SCHEDULE[selectedDay.date.getDay()]?.name || "Rest"}</span>}
                       </div>
                   </div>
-                  <button onClick={() => setSelectedDay(null)} className="text-gray-500 hover:text-white"><XCircle size={20}/></button>
+                  <button onClick={() => setSelectedDay(null)} className="text-gray-500 hover:text-white transition-colors bg-gym-900 border border-gym-700 p-2"><X size={20}/></button>
               </div>
 
               {selectedDay.status === 'DONE' ? (
-                  <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
+                  <div className="space-y-3 max-h-48 overflow-y-auto no-scrollbar">
                       {dailyReport.length > 0 ? (
                           dailyReport.map((log, i) => (
-                              <div key={i} className="flex justify-between items-center text-xs p-2 bg-gym-900 rounded border border-gym-700">
-                                  <span className="font-bold text-gray-300">{log.exerciseName}</span>
+                              <div key={i} className="flex justify-between items-center text-sm p-4 bg-gym-900 brutal-border group hover:bg-gym-accent hover:text-black transition-colors">
+                                  <span className="font-bold font-mono uppercase group-hover:text-black text-gray-300">{log.exerciseName}</span>
                                   <div className="text-right">
-                                      <span className="block font-bold text-white">{log.bestSet}</span>
-                                      <span className="text-gray-500">{log.sets} Sets</span>
+                                      <span className="block font-display text-2xl leading-none mb-1 group-hover:text-black text-white">{log.bestSet}</span>
+                                      <span className="text-[10px] font-mono font-bold uppercase group-hover:text-black/60 text-gray-500">{log.sets} Sets</span>
                                   </div>
                               </div>
                           ))
                       ) : (
-                          <p className="text-xs text-gray-500 italic">No detailed logs found.</p>
+                          <p className="text-xs font-mono text-gray-500 uppercase text-center p-4">No detailed logs found.</p>
                       )}
                   </div>
               ) : selectedDay.status === 'MISSED' ? (
-                  <div className="text-center py-4 bg-red-900/10 rounded-lg border border-red-500/20">
-                      <AlertCircle className="text-red-500 mx-auto mb-2" size={24} />
-                      <p className="text-xs text-red-300 font-bold">You missed a scheduled session.</p>
-                      <p className="text-[10px] text-red-400/70 mt-1">Consistency is key. Don't miss two in a row.</p>
+                  <div className="text-center py-8 bg-gym-warning/10 brutal-border border-gym-warning">
+                      <AlertCircle className="text-gym-warning mx-auto mb-4" size={32} />
+                      <p className="text-sm text-gym-warning font-mono uppercase font-bold mb-2">You missed a session.</p>
+                      <p className="text-xs text-gym-warning/70 font-mono uppercase">Consistency is key. Do not break the streak.</p>
                   </div>
               ) : selectedDay.status === 'REST' ? (
-                  <div className="text-center py-4">
-                      <Dumbbell className="text-gray-600 mx-auto mb-2" size={24} />
-                      <p className="text-xs text-gray-400">Rest Day. Recovery is when growth happens.</p>
+                  <div className="text-center py-8 bg-gym-800 brutal-border">
+                      <Dumbbell className="text-gray-600 mx-auto mb-4" size={32} />
+                      <p className="text-sm font-mono uppercase font-bold text-gray-400">Rest Day.</p>
+                      <p className="text-xs font-mono uppercase text-gray-500 mt-2">Recovery is growth.</p>
                   </div>
               ) : (
-                  <div className="text-center py-4">
-                      <p className="text-xs text-gray-400">Scheduled: {WORKOUT_SCHEDULE[selectedDay.date.getDay()]?.name || "Rest"}</p>
+                  <div className="text-center py-8 bg-gym-800 brutal-border">
+                      <p className="text-sm font-mono uppercase font-bold text-gray-400 mb-1">Scheduled Session</p>
+                      <p className="text-2xl font-display text-gym-accent">{WORKOUT_SCHEDULE[selectedDay.date.getDay()]?.name || "Rest"}</p>
                   </div>
               )}
-          </div>
+          </motion.div>
       )}
-    </div>
+      </AnimatePresence>
+    </motion.div>
   );
 };
 
